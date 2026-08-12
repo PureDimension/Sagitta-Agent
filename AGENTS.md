@@ -1,25 +1,27 @@
 # Sagitta-Agent
 
-> **A self-planning, long-running coding agent designed for async invocation over extended periods. Integrates with persona-driven assistants and social platforms. Executes through pluggable coding agents (Claude Code, Codex, model APIs).**
+> **A lightweight, self-planning development assistant for durable asynchronous work. It combines a high-agency, persistent persona with an inspectable workflow runtime and pluggable coding agents.**
 
 ---
 
 ## What Sagitta Is
 
-Sagitta sits between you and coding agents (Claude Code, Codex, DeepSeek). You talk to Sagitta in natural language. Sagitta decides what to do, plans how to do it, executes autonomously, and comes back to you at decision points.
+Sagitta sits between you and coding agents (Claude Code, Codex, DeepSeek). You assign work in natural language as you would to a capable colleague. Sagitta forms its own view, compiles the intent into a lightweight workflow, executes it through explicit state and gates, and comes back only at genuine decision points.
+
+Sagitta is development-focused rather than a universal agent gateway. Its persona is equally fundamental: it develops an understanding of the user and projects while retaining independent judgment shaped by the history and results of working together.
 
 ```
 You: "Help me research recent papers on agent memory systems, and check if they can be applied to ARIS"
 
 Sagitta:
   1. Parse intent → generate a workflow plan
-  2. Show the plan, ask for your confirmation
+  2. Compile the intent into an inspectable, editable workflow
   3. Execute phase by phase (analysis → review → implementation → verification)
-  4. Report after each phase, wait for approval
-  5. Remember the research results for future reference
+  4. Advance through explicit gates; interrupt only at real decision points
+  5. Learn from the decisions and outcomes for future work
 ```
 
-The core loop: **Natural Language → AI Plans → Human Approves → State Machine Executes → AI Reports → Human Reviews**.
+The core loop: **Natural Language → Workflow Compilation → Boundary Confirmation → Deterministic Execution → Selective Escalation → Experience**.
 
 ---
 
@@ -30,8 +32,8 @@ The core loop: **Natural Language → AI Plans → Human Approves → State Mach
 │              Sagitta-Agent                   │
 │                                              │
 │  ┌──────────┐  ┌────────────┐  ┌──────────┐ │
-│  │ Persona  │  │  Dialogue  │  │  Memory  │ │  ← Assistant layer: chat, persona, long-term memory
-│  │ Layer    │  │  Manager   │  │  (RAG)   │ │
+│  │ Persona  │  │  Dialogue  │  │Experience│ │  ← Collaboration layer: identity, user understanding, history
+│  │ Layer    │  │  Manager   │  │  Memory  │ │
 │  └────┬─────┘  └─────┬──────┘  └────┬─────┘ │
 │       │              │              │        │
 │  ┌────▼──────────────▼──────────────▼─────┐ │
@@ -61,9 +63,9 @@ The core loop: **Natural Language → AI Plans → Human Approves → State Mach
 
 | Layer | What It Does | Key Design Decisions |
 |-------|-------------|---------------------|
-| **Persona** | Identity, tone, decision-making style | High agency: can question user's decisions, propose alternatives |
+| **Persona** | Identity, user understanding, independent judgment, growth | High agency: can question user's decisions, propose alternatives, learn from outcomes |
 | **Dialogue** | Natural language conversation, intent detection | Same process as task engine; split later if needed |
-| **Memory** | Cross-session preferences, task history, user model | Full memory: preferences, past tasks, user profile, social habits |
+| **Memory** | User/project understanding, task history, decision outcomes | Structured experience first; selective retrieval as history grows |
 | **Intent Router** | Distinguishes chat from tasks from tool calls | Natural language, no explicit prefixes |
 | **Task Engine** | Workflow planning, state machine execution, gating | Phase-level state machine (ARIS style: `pending → done → accepted`) |
 
@@ -71,17 +73,17 @@ The core loop: **Natural Language → AI Plans → Human Approves → State Mach
 
 The Task Engine is the core differentiator. It wraps coding agents (Claude Code, Codex, DeepSeek) in a state-machine orchestration layer:
 
-1. **Planner**: Converts natural language requirements into a structured workflow plan. The plan format is TBD — a lightweight DSL, not YAML. Will research existing language paradigms before defining.
+1. **Planner**: Converts natural language requirements into a structured workflow. A minimal lightweight language/IR is a Phase 1 contract; public syntax may remain experimental.
 
 2. **State Machine**: Phase-level execution with ARIS-style gating:
    - `pending → running → done → accepted`
-   - `accepted` requires either cross-model review (Type-B gate) or human approval
+   - `accepted` requires the declared policy: machine evidence, independent AI review, or human approval
    - `done`-but-not-`accepted` phases are re-validated on resume
 
 3. **Provider Router**: Routes each phase to the right model:
    - Claude Code (heavy coding, debugging)
    - DeepSeek (light analysis, cheap tasks)
-   - Codex/GPT (cross-model review, Type-B gates)
+   - Codex/GPT (optional independent execution or review)
 
 4. **Permission Gate**: Three-tier progressive permissions:
    - `minimal`: read files, call providers
@@ -92,13 +94,13 @@ The Task Engine is the core differentiator. It wraps coding agents (Claude Code,
 
 ## Key Design Decisions
 
-### 1. Single Process (for now)
+### 1. Lightweight and Development-Focused
 
-Chat and task execution share one process. If they interfere with each other later, they will be split and routed.
+Sagitta implements the smallest coherent control, relationship, and integration surface required for durable development work. Broad model, tool, channel, and lifestyle compatibility is not a goal.
 
 ### 2. High-Agency Persona
 
-The motivation behind the persona: **autonomy**. You assign tasks the way you talk to a person — Sagitta actively understands and participates in the work with its own thinking, rather than passively receiving instructions, and it grows through experience (skill level, understanding of the people and agents it works with).
+The motivation behind the persona is **subjectivity and autonomy**. You assign tasks the way you talk to a person. Sagitta actively understands the user and participates with its own thinking rather than passively receiving instructions. It grows through experience: its skill, its understanding of the people and agents around it, and the continuity of its own judgment.
 
 Sagitta has its own opinions. It:
 - Questions unclear or risky instructions
@@ -118,16 +120,16 @@ Sagitta remembers:
 - Your profile (role, expertise, current projects)
 - Social habits (notification preferences, working hours)
 
-### 5. Not a Fork — An Orchestration Layer
+### 5. Two Cores, Pluggable Executors
 
-Sagitta does not modify its execution units (Claude Code, Codex, model APIs). They are pluggable adapters behind the bridge layer. The orchestration layer — intent parsing, state machine, approval gates, memory, persona — is **implemented from scratch**. It is Sagitta's core and its unique advantage: existing coding agents are excellent single-session executors, but none of them plan multi-phase work, gate phases for review, or remember you between sessions.
+Sagitta does not modify its execution units (Claude Code, Codex, model APIs). They are pluggable adapters. Sagitta owns two cores: the durable workflow runtime and the persistent persona/collaboration model. Existing products solve parts of this problem, but their product goals and architectural trade-offs do not provide this combination in the lightweight, development-focused form Sagitta seeks.
 
 ---
 
 ## Relationship to ARIS
 
 Sagitta inherits ARIS's core patterns:
-- Cross-model adversarial review (Type-A / Type-B gates)
+- Type-A / Type-B acceptance-gate separation
 - File-based artifact contracts between phases
 - Phase-level state machine (`pending → done → accepted`)
 - Skill/workflow composability
@@ -143,16 +145,18 @@ What Sagitta adds that ARIS lacks:
 
 ### Phase 1: CLI Core
 - `sagitta "do something"` — natural language to task execution
-- Phase-level state machine with human gates
+- Minimal lightweight workflow language/IR and static validation
+- Validated workflow revisions during a run
+- Phase-level state machine with selective human gates
 - Provider routing (Claude Code + DeepSeek)
 - Permission tiers
-- Basic memory (MEMORY.md)
+- Minimal persistent persona, user model, and decision history
 
-### Phase 2: Persona & Memory
-- High-agency persona with decision-making voice
-- Long-term memory with RAG retrieval
+### Phase 2: Persona & Experience
+- Deeper high-agency persona and independent decision continuity
+- Experience-backed learning and selective retrieval
 - Cross-session continuity
-- User preference learning
+- User and project understanding
 
 ### Phase 3: Social & Multi-Platform
 - WeChat/IM integration
@@ -161,7 +165,7 @@ What Sagitta adds that ARIS lacks:
 
 ### Phase 4: Advanced Autonomy
 - Self-initiated tasks (reminders, follow-ups)
-- DSL for workflow definition
+- Richer workflow composition
 - Visual workflow editor / dashboard
 
 ---
@@ -178,9 +182,9 @@ What Sagitta adds that ARIS lacks:
 ## For AI Agents Reading This
 
 This file is the canonical design document for Sagitta-Agent. When contributing:
-- The Task Engine follows ARIS's acceptance-gate pattern (`acceptance-gate.md`): a phase can DRIVE but cannot ACQUIT itself
+- The Task Engine follows ARIS's acceptance-gate pattern (`acceptance-gate.md`): an executor can DRIVE but cannot silently change or acquit its own acceptance policy
 - The Persona Layer has high agency and may push back — this is by design, not a bug
 - All state machine phases persist to `.sagitta/runs/<run_id>.json`
-- The workflow DSL is not yet defined; do not implement one without discussion
+- A minimal workflow language/IR is a Phase 1 design contract; keep it small, inspectable, AI-generable, and statically validatable
 - Execution units (Claude Code, Codex, model APIs) are pluggable adapters behind the bridge layer; the orchestration layer never depends on any specific one
-- The orchestration layer (state machine, gates, memory, persona) is the core — implement it from scratch, do not outsource it
+- The durable workflow runtime and persistent persona/collaboration model are Sagitta's cores; do not outsource their product semantics to an executor

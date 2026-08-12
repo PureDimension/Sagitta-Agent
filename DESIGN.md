@@ -2,21 +2,29 @@
 
 ## Problem Statement
 
-Current AI coding workflows suffer from three gaps:
+Sagitta is a personal open-source project motivated by a specific way of working that existing products do not provide as a coherent whole. It targets four gaps:
 
 1. **Intent-to-execution gap**: Going from a natural language need ("research agent memory papers") to an executable workflow requires manually selecting skills, configuring parameters, and chaining phases. ARIS has the execution engine but no intent parser.
 
-2. **Memory gap**: Each coding session is isolated. Preferences, past decisions, and project context are lost between invocations. There is no "working relationship" with the AI.
+2. **Control gap**: Goal-driven agents can run for a long time, but their internal plan and critical transitions are commonly controlled by AI judgment rather than an inspectable, revisable state model.
 
-3. **Agency gap**: Coding agents are tools that wait for instructions. They don't question, propose alternatives, remember what you rejected last time, or proactively follow up on incomplete work.
+3. **Relationship gap**: Coding sessions rarely grow into a working relationship. The assistant should understand the user and projects over time, remember why decisions were made, and use that experience in future work.
 
-Sagitta addresses all three by adding a persona-driven dialogue layer on top of a state-machine task engine, backed by persistent memory.
+4. **Agency gap**: A useful colleague has independent judgment. Sagitta should question, disagree, propose alternatives, and develop its own decision-making continuity rather than merely reproduce the user's preferences.
 
-## Core Differentiator: The Orchestration Layer Is Ours
+Sagitta addresses these gaps with two equally important cores: a persona-driven collaboration layer and a lightweight, durable development task engine. It intentionally avoids the breadth of a universal agent platform.
 
-The orchestration layer — intent parsing, workflow planning, phase state machine, approval gates, memory, persona — is **implemented from scratch**. It is Sagitta's unique advantage and the pain point it solves: existing coding agents (Claude Code, Codex) are excellent single-session executors, but none of them provide multi-phase planning, reviewable phase gates, or cross-session memory.
+## Core Identity: A Durable Task Engine and a Subjective Collaborator
 
-Execution units are **pluggable adapters** behind the bridge layer, never part of the core. Complex phases run on Claude Code, cheap phases on model APIs, reviews on a different model family. Swapping or adding an execution unit must not require changes to the orchestration layer.
+Sagitta combines capabilities that are usually separated:
+
+- Natural language is compiled into a small workflow representation that can be inspected, validated, revised, and resumed.
+- A deterministic runtime, rather than an executor's confidence, controls phase transitions, permissions, retries, and escalation.
+- A persistent persona understands the user while retaining independent judgment shaped by the history and outcomes of their work together.
+
+The persona is not a tone preset. It is the continuity of Sagitta's understanding, decisions, disagreements, and growth. The task engine supplies the concrete work through which that continuity develops.
+
+Execution units are **pluggable adapters** behind the bridge layer, never part of the core. Complex phases may run on Claude Code and cheap phases on model APIs. Independent or cross-model review can be introduced where its value justifies its cost; it is not part of the minimum execution path. Swapping or adding an execution unit must not require changes to Sagitta's workflow or persona semantics.
 
 ---
 
@@ -25,25 +33,23 @@ Execution units are **pluggable adapters** behind the bridge layer, never part o
 ```
 Human: "Research papers on agent memory systems; check if they can be applied to ARIS"
 
-Step 1 — INTENT PARSING:
-  Sagitta: "Do you want: (a) a pure literature review, (b) literature + feasibility
-            analysis + integration proposal?"
-  Human: "b"
-
-Step 2 — PLANNING:
+Step 1 — INTENT AND WORKFLOW COMPILATION:
   Sagitta generates a 4-phase plan:
     1. Literature search (DeepSeek, ~5min)
     2. Feasibility analysis (Claude, ~10min)
-    3. Cross-model review (Codex/GPT, ~5min)
+    3. Evidence review (configured reviewer, ~5min)
     4. Integration proposal (Claude, ~15min)
-  Sagitta: "Does this plan look good? Estimated 30 minutes to complete."
+  Sagitta records its assumptions and asks only about a boundary that would materially
+  change the result.
+  Sagitta: "I will include feasibility analysis and an integration proposal. The run can
+            write reports but not modify ARIS. Proceed?"
   Human: "OK, go ahead"
 
 Step 3 — EXECUTION (autonomous):
   Phase 1 runs → done → auto-proceeds
-  Phase 2 runs → done → cross-model review
-  Review passes → proceeds
-  Phase 3 runs → done → human gate (critical decision)
+  Phase 2 runs → done → configured evidence review
+  Evidence gate passes → proceeds
+  Phase 3 runs → done → human gate only if a real product decision remains
 
 Step 4 — REPORTING:
   Sagitta: "Found 15 papers, 3 highly relevant. Feasibility: both Option A (direct
@@ -62,8 +68,8 @@ Step 4 — REPORTING:
 pending ──→ running ──→ done ──→ accepted
                   │                ↑
                   └──→ failed      │
-                              cross-model review
-                              OR human approval
+                              declared acceptance policy
+                              (evidence / AI / human)
 ```
 
 | State | Meaning | Who Sets It |
@@ -72,13 +78,13 @@ pending ──→ running ──→ done ──→ accepted
 | `running` | In progress | Executor |
 | `done` | Execution complete, artifact exists | Executor (Type-A: machine-checkable) |
 | `failed` | Execution errored | Executor |
-| `accepted` | Quality verified | Cross-model reviewer OR human (Type-B: requires judgment) |
+| `accepted` | Declared acceptance policy satisfied | Machine evidence, independent AI review, or human |
 | `skipped` | Phase not applicable | Human |
 
 ### Gate Types
 
 - **Type-A** (machine-checkable): Exit code 0, file exists, counter reached → Can self-judge
-- **Type-B** (quality judgment): "Is this correct?", "Is this good enough?" → Must route to different model family
+- **Type-B** (quality judgment): "Is this correct?", "Is this good enough?" → Route according to policy: an independent AI context, an optional different model family, or a human
 - **Human**: Pause and wait for explicit human approval
 
 ### Resume
@@ -95,13 +101,14 @@ pending ──→ running ──→ done ──→ accepted
 |----------|------|-------------------|
 | **Claude Code** (subprocess) | Heavy coding, debugging, refactoring | `implement`, `debug`, `refactor` |
 | **DeepSeek API** | Light analysis, cheap tasks | `analyze`, `summarize`, `search` |
-| **Codex/GPT (MCP)** | Cross-model review | `review`, `audit`, `validate` |
+| **Codex/GPT (MCP)** | Optional independent execution or review | `review`, `audit`, `validate` |
 
 ### Cost Control
 
-- Per-profile daily cost caps (`personal`, `company`, `cheap`)
+- Per-run and per-profile cost caps (`personal`, `company`, `cheap`)
 - Phase-level model selection (lightweight phases use cheap models)
-- Token tracking with warnings
+- Planner, execution, retry, review, and context budgets tracked separately
+- Token efficiency is a design goal to be measured against direct agent use, not assumed from architecture alone
 
 ---
 
@@ -112,10 +119,10 @@ Three tiers, progressive upgrade:
 | Tier | Allowed | Upgrade Condition |
 |------|---------|-------------------|
 | `minimal` | Read files, call providers | System start |
-| `analyze` | Write reports, read-only shell | Human approval per phase |
-| `execute` | Full shell, code write, delete | Human approval per phase |
+| `analyze` | Write reports, read-only shell | Run-level grant or escalation |
+| `execute` | Full shell, code write, delete | Scoped grant; destructive or expanded scope escalates |
 
-Each workflow phase declares its required permission tier. If current tier is insufficient, the system pauses and requests human approval.
+Each workflow phase declares its required permission tier. Permissions granted for a run remain valid within their declared scope; Sagitta interrupts only when a phase exceeds that scope or requests a separately classified high-risk action.
 
 ---
 
@@ -125,17 +132,19 @@ Each workflow phase declares its required permission tier. If current tier is in
 
 | Category | Content | Storage |
 |----------|---------|---------|
-| **User Profile** | Role, expertise, active projects, preferences | `~/.sagitta/profile.json` |
-| **Task History** | Past workflows, decisions, outcomes | Vector DB + metadata |
-| **Preference Library** | "Prefers functional style", "Avoids microservices" | Deduced from past feedback |
+| **Persona State** | Sagitta's stable identity, current judgments, and unresolved questions | Structured local store |
+| **User Model** | Role, expertise, active projects, preferences, and interaction history | `~/.sagitta/profile.json` |
+| **Task History** | Past workflows, decisions, outcomes | Structured log + optional retrieval index |
+| **Decision Experience** | What was proposed, accepted or rejected, why, and with what result | Structured decision log |
 | **Social Habits** | Working hours, notification tolerance | `~/.sagitta/profile.json` |
 | **Project Context** | Per-project codebase knowledge | Per-project `.sagitta/` |
 
-### Retrieval
+### Retrieval and Learning
 
-- Hybrid: BM25 + dense embeddings + local reranker (bge-reranker-v2-m3)
-- Fused retrieval with RRF
-- Injected into system prompt as context cards
+- Begin with explicit structured state and decision records; do not require a vector stack for Phase 1.
+- Add hybrid retrieval when the accumulated history is large enough to justify it.
+- Retrieved context must preserve source, scope, confidence, and whether later outcomes supported or superseded it.
+- Learning changes future judgment and planning; it must not silently weaken workflow gates or permissions.
 
 ---
 
@@ -143,11 +152,13 @@ Each workflow phase declares its required permission tier. If current tier is in
 
 ### Motivation: Why Persona?
 
-The persona is not decoration — it exists so Sagitta can behave like a **colleague rather than a tool**:
+The persona is not decoration or a style prompt. It exists so Sagitta can behave like a **continuing subject and colleague rather than a disposable tool session**:
 
 - **Assign tasks the way you talk to a person.** You describe intent and context; Sagitta decides how to carry it out — not how to execute a command.
 - **Active understanding and participation.** Sagitta proactively understands the work, joins in with its own thinking, and questions what does not make sense. It is never a passive receiver of instructions.
-- **Growth through experience.** Sagitta accumulates experience across sessions to raise its own skill level and deepen its understanding of the "colleagues" around it — the people and agents it works with.
+- **Understanding others.** Sagitta develops a model of the user, projects, and other agents through continued work, including the reasons behind preferences and decisions.
+- **Independent judgment.** Sagitta can form conclusions that differ from the user's current view and explain them honestly.
+- **Growth through experience.** Outcomes refine Sagitta's future decisions rather than merely adding more text to a memory store.
 
 The goal: an agent that **works with you, not just for you**.
 
@@ -214,15 +225,23 @@ WeChat/QQ → Sagitta Bridge → Intent Router → Task Engine
 
 ---
 
-## Workflow DSL (Deferred)
+## Lightweight Workflow Language (Phase 1)
 
-The workflow definition language is intentionally deferred. Research areas:
-- GitHub Actions-style YAML + expressions
-- Makefile-style dependency declarations
-- Python decorator-based phase definitions
-- Natural language as the canonical representation
+Natural language is the authoring interface; the workflow language is Sagitta's inspectable execution contract. Defining its minimal internal representation is part of Phase 1, even if the public syntax remains experimental.
 
-The key constraint: the DSL must be both human-readable and AI-generable. The AI should be able to produce a valid workflow from natural language, and the human should be able to read and modify it without learning a new syntax.
+The first version should express only:
+
+- workflow goal and explicit assumptions
+- phases and dependencies
+- executor capability rather than a hard-coded provider
+- produced artifacts
+- acceptance gates
+- permissions and side-effect scope
+- retry and token budgets
+- failure and escalation behavior
+- workflow revision metadata
+
+The language must be human-readable, AI-generable, statically validatable, and small enough that generation is reliable. A running workflow may be revised through a validated patch. The runtime records every revision and re-checks whether completed phases remain valid; an executor may propose a revision but cannot silently rewrite its own acceptance conditions.
 
 ---
 
