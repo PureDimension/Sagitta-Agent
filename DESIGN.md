@@ -12,6 +12,12 @@ Current AI coding workflows suffer from three gaps:
 
 Sagitta addresses all three by adding a persona-driven dialogue layer on top of a state-machine task engine, backed by persistent memory.
 
+## Core Differentiator: The Orchestration Layer Is Ours
+
+The orchestration layer — intent parsing, workflow planning, phase state machine, approval gates, memory, persona — is **implemented from scratch**. It is Sagitta's unique advantage and the pain point it solves: existing coding agents (Claude Code, Codex) are excellent single-session executors, but none of them provide multi-phase planning, reviewable phase gates, or cross-session memory.
+
+Execution units are **pluggable adapters** behind the bridge layer, never part of the core. Complex phases run on Claude Code, cheap phases on model APIs, reviews on a different model family. Swapping or adding an execution unit must not require changes to the orchestration layer.
+
 ---
 
 ## Core Loop
@@ -214,13 +220,12 @@ The key constraint: the DSL must be both human-readable and AI-generable. The AI
 
 | Component | Choice |
 |-----------|--------|
-| Agent Engine | pydantic-deepagents |
+| Execution Units | Claude Code (subprocess), Codex, DeepSeek API — pluggable adapters behind the bridge layer |
 | State Machine | Custom (Python, ~200 lines) |
 | Memory | SQLite + Chroma/FAISS + bge-reranker-v2-m3 |
 | CLI | Typer + Rich |
 | API | FastAPI (later) |
 | Daemon | systemd timer (macOS: launchd) |
-| Chat Backend | pydantic-deepagents interactive_chat |
 
 ---
 

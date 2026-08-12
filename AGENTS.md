@@ -1,6 +1,6 @@
 # Sagitta-Agent
 
-> **A self-planning, long-running coding agent designed for async invocation over extended periods. Integrates with persona-driven assistants and social platforms. Built on pydantic-deepagents.**
+> **A self-planning, long-running coding agent designed for async invocation over extended periods. Integrates with persona-driven assistants and social platforms. Executes through pluggable coding agents (Claude Code, Codex, model APIs).**
 
 ---
 
@@ -52,8 +52,8 @@ The core loop: **Natural Language → AI Plans → Human Approves → State Mach
 │  │  └──────────────────────────────────┘  │ │
 │  └────────────────────────────────────────┘ │
 │                                              │
-│  Built on: pydantic-deepagents               │
-│  (agent loop, context compaction, sandbox)   │
+│  Executes via: Claude Code / DeepSeek /      │
+│  Codex (pluggable execution units)           │
 └─────────────────────────────────────────────┘
 ```
 
@@ -116,9 +116,9 @@ Sagitta remembers:
 - Your profile (role, expertise, current projects)
 - Social habits (notification preferences, working hours)
 
-### 5. Not a Fork — A Wrapper
+### 5. Not a Fork — An Orchestration Layer
 
-Sagitta does not modify pydantic-deepagents. It is a layer on top: `pip install sagitta-agent` depends on `pydantic-deep`. The pydantic-deepagents engine handles the agent loop, context compaction, and sandboxing. Sagitta adds the orchestration layer (state machine, permissions, persona, memory).
+Sagitta does not modify its execution units (Claude Code, Codex, model APIs). They are pluggable adapters behind the bridge layer. The orchestration layer — intent parsing, state machine, approval gates, memory, persona — is **implemented from scratch**. It is Sagitta's core and its unique advantage: existing coding agents are excellent single-session executors, but none of them plan multi-phase work, gate phases for review, or remember you between sessions.
 
 ---
 
@@ -167,7 +167,7 @@ What Sagitta adds that ARIS lacks:
 ## Repository
 
 - **GitHub**: https://github.com/PureDimension/Sagitta-Agent
-- **Built on**: [pydantic-deepagents](https://github.com/vstorm-co/pydantic-deepagents) (MIT)
+- **Execution units**: [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex), model APIs — pluggable via the bridge layer
 - **Inspired by**: [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) (MIT)
 - **License**: MIT
 
@@ -180,4 +180,5 @@ This file is the canonical design document for Sagitta-Agent. When contributing:
 - The Persona Layer has high agency and may push back — this is by design, not a bug
 - All state machine phases persist to `.sagitta/runs/<run_id>.json`
 - The workflow DSL is not yet defined; do not implement one without discussion
-- pydantic-deepagents is a dependency, not a fork; do not modify its source
+- Execution units (Claude Code, Codex, model APIs) are pluggable adapters behind the bridge layer; the orchestration layer never depends on any specific one
+- The orchestration layer (state machine, gates, memory, persona) is the core — implement it from scratch, do not outsource it

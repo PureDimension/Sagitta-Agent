@@ -3,7 +3,7 @@
 <p align="center">
   <b>A self-planning, long-running coding agent designed for async invocation over extended periods.</b><br>
   Integrates with persona-driven assistants and social platforms.<br>
-  Built on <a href="https://github.com/vstorm-co/pydantic-deep">pydantic-deepagents</a>.
+  Executes through pluggable coding agents (Claude Code, Codex, model APIs).
 </p>
 
 ---
@@ -24,6 +24,14 @@ Sagitta:
 ```
 
 The core loop: **Natural Language → AI Plans → Human Approves → State Machine Executes → AI Reports → Human Reviews**.
+
+---
+
+## Why the Orchestration Layer Is Our Core
+
+Sagitta's orchestration layer — intent parsing, workflow planning, phase state machine, approval gates, cross-session memory, persona — is **implemented from scratch**. No existing agent framework provides it: coding agents (Claude Code, Codex) are single-session execution engines. They execute a task well, but they do not plan multi-phase work, gate phases for review, or remember you between sessions. That gap — long-running, reviewable, rememberable coding workflows — is the pain point Sagitta solves, and the orchestration layer is our unique advantage.
+
+Execution units are **pluggable adapters** behind the bridge layer, not part of the core: complex phases run on Claude Code, cheap phases on model APIs, reviews on a different model family.
 
 ---
 
@@ -56,8 +64,8 @@ The core loop: **Natural Language → AI Plans → Human Approves → State Mach
 │  │  └──────────────────────────────────┘  │ │
 │  └────────────────────────────────────────┘ │
 │                                              │
-│  Built on: pydantic-deepagents               │
-│  (agent loop, context compaction, sandbox)   │
+│  Executes via: Claude Code / DeepSeek /      │
+│  Codex (pluggable execution units)           │
 └─────────────────────────────────────────────┘
 ```
 
@@ -78,7 +86,7 @@ The Task Engine is the core differentiator. It wraps coding agents (Claude Code,
 2. **High-Agency Persona** — Sagitta has its own opinions: questions unclear instructions, proposes alternatives, remembers past decisions
 3. **Natural Language Interface** — no explicit `/task` or `/chat` prefixes; intent is determined from natural language
 4. **Full Long-Term Memory** — preferences, past task history, user profile, social habits
-5. **Not a Fork — A Wrapper** — Sagitta does not modify pydantic-deepagents; it is an orchestration layer on top (`pip install sagitta-agent` depends on `pydantic-deep`)
+5. **Not a Fork — An Orchestration Layer** — Sagitta does not modify its execution units (Claude Code, Codex, model APIs); they are pluggable adapters. The orchestration layer is implemented from scratch — that is the core
 
 ---
 
@@ -103,6 +111,6 @@ The Task Engine is the core differentiator. It wraps coding agents (Claude Code,
 ## Repository
 
 - **GitHub**: https://github.com/PureDimension/Sagitta-Agent
-- **Built on**: [pydantic-deepagents](https://github.com/vstorm-co/pydantic-deep) (MIT)
+- **Execution units**: [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex), model APIs — pluggable via the bridge layer
 - **Inspired by**: [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) (MIT)
 - **License**: MIT
