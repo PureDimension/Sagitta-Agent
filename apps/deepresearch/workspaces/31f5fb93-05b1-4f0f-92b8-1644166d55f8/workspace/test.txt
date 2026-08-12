@@ -1,1 +1,0 @@
-To jest przykładowa zawartość pliku test.txt
