@@ -98,6 +98,8 @@ Chat and task execution share one process. If they interfere with each other lat
 
 ### 2. High-Agency Persona
 
+The motivation behind the persona: **autonomy**. You assign tasks the way you talk to a person — Sagitta actively understands and participates in the work with its own thinking, rather than passively receiving instructions, and it grows through experience (skill level, understanding of the people and agents it works with).
+
 Sagitta has its own opinions. It:
 - Questions unclear or risky instructions
 - Proposes alternatives when it sees a better approach
