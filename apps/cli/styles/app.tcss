@@ -1,0 +1,198 @@
+/* ── Main layout ─────────────────────────────────────── */
+
+Screen {
+    background: $background;
+    /* Quiet, near-invisible scrollbars — they only hint until hovered. */
+    scrollbar-size-vertical: 1;
+    scrollbar-size-horizontal: 1;
+    scrollbar-color: $panel;
+    scrollbar-color-hover: $primary;
+    scrollbar-color-active: $accent;
+    scrollbar-background: $background;
+    scrollbar-background-hover: $background;
+    scrollbar-background-active: $background;
+}
+
+#main-layout {
+    height: 1fr;
+}
+
+#messages-pane {
+    height: 1fr;
+    width: 1fr;
+}
+
+/* ── Header ──────────────────────────────────────────── */
+
+DeepHeader {
+    dock: top;
+    height: 1;
+    background: $surface-lighten-1;
+    color: $text;
+    padding: 0 2;
+}
+
+/* ── Message area ────────────────────────────────────── */
+
+MessageList {
+    height: 1fr;
+    padding: 0 0;
+    scrollbar-size-vertical: 1;
+}
+
+UserMessage {
+    height: auto;
+    padding: 0 2;
+    margin: 1 0 0 0;
+    border-left: thick $primary;
+}
+
+UserMessage .user-label {
+    color: $accent;
+    text-style: bold;
+}
+
+UserMessage .user-text {
+    padding: 0 0 0 2;
+}
+
+AssistantMessage {
+    height: auto;
+    margin: 1 0 0 0;
+}
+
+AssistantMessage .assistant-label {
+    color: $accent;
+    padding: 0 2;
+}
+
+/* ── Tool calls ──────────────────────────────────────── */
+
+ToolCallWidget {
+    height: auto;
+    padding: 0 2;
+    margin: 0 0 0 1;
+    border-left: tall $primary 40%;
+}
+
+ToolCallWidget .tool-header {
+    height: 1;
+}
+
+ToolCallWidget .tool-output {
+    padding: 0 0 0 3;
+    color: $text-disabled;
+    display: none;
+}
+
+ToolCallWidget .tool-output.visible {
+    display: block;
+}
+
+ToolCallWidget .tool-output-expanded {
+    padding: 0 0 0 3;
+    color: $text-disabled;
+    display: none;
+}
+
+ToolCallWidget .tool-output-expanded.visible {
+    display: block;
+}
+
+/* ── Bottom bar ──────────────────────────────────────── */
+/* A single bottom-docked column so the activity strip and the input stack
+   vertically instead of overlapping (sibling dock:bottom widgets all anchor
+   to the same edge). The input is undocked here — the column docks instead. */
+
+#bottom-bar {
+    dock: bottom;
+    height: auto;
+    background: $background;
+}
+
+#bottom-bar InputArea {
+    dock: none;
+}
+
+/* Pinned above the input: subagents (under the messages), then the TODO
+   list, then queued messages. Collapses to zero height when all are empty. */
+
+#activity-dock {
+    height: auto;
+    padding: 0 2;
+    background: $background;
+}
+
+#activity-dock SubagentsWidget,
+#activity-dock TodosWidget,
+#activity-dock QueuedWidget {
+    margin: 0 0 1 0;
+}
+
+/* ── Status bar ──────────────────────────────────────── */
+
+StatusBar {
+    dock: bottom;
+    height: 1;
+    background: $surface-lighten-1;
+    color: $text;
+    padding: 0 2;
+}
+
+/* ── Input area ──────────────────────────────────────── */
+
+InputArea {
+    dock: bottom;
+    height: auto;
+    max-height: 10;
+    background: $background;
+}
+
+PromptRow {
+    height: 1;
+    padding: 0 1;
+    background: $background;
+}
+
+PromptPrefix {
+    width: 2;
+    height: 1;
+    color: $accent;
+    text-style: bold;
+    padding: 0 0;
+}
+
+PromptInput {
+    margin: 0 0;
+    border: none;
+    padding: 0 0;
+    height: 1;
+    width: 1fr;
+    background: $background;
+}
+
+PromptInput:focus {
+    border: none;
+}
+
+HintsBar {
+    height: 1;
+    color: $text-disabled;
+    padding: 0 2;
+    background: $background;
+}
+
+MultilineInput {
+    height: auto;
+    max-height: 8;
+    min-height: 3;
+    margin: 0 2;
+    border: tall $accent;
+    padding: 0 1;
+}
+
+#fork-view-body {
+    height: 1fr;
+    width: 1fr;
+    display: none;
+}

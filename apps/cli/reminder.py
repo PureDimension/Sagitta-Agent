@@ -1,0 +1,122 @@
+"""CLI-side reminder helpers — config building and live mode switching."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from pydantic_ai.models import Model
+
+    from apps.cli.app import DeepApp
+
+_REMINDER_LABELS: dict[str, str] = {
+    "off": "off",
+    "first": "first message only",
+    "context": "first + recent context",
+    "llm": "LLM generator",
+}
+
+
+def _build_reminder_config(
+    periodic_reminder: bool | None,
+    reminder_mode: Literal["off", "first", "context", "llm"] | None,
+    config: Any,
+    on_reminder: Callable[[int, str], None] | None = None,
+    reminder_model: str | Model | None = None,
+) -> Any:
+    """Build a PeriodicReminderConfig (or None) from CLI/config args."""
+    enabled = periodic_reminder if periodic_reminder is not None else config.periodic_reminder
+    if not enabled:
+        return None
+    mode = reminder_mode or config.reminder_mode or "llm"
+    if mode == "off":
+        return None
+    from pydantic_deep.features.periodic_reminder import (
+        LLMReminderGenerator,
+        make_config_for_mode,
+    )
+
+    cfg = make_config_for_mode(mode)
+    if mode == "llm":
+        from apps.cli.model_resolve import resolve_cli_model
+
+        model = reminder_model or getattr(config, "reminder_model", None) or config.model
+        # Already-resolved models pass straight through; a raw `config.model`
+        # may still carry the local-endpoint sentinel.
+        cfg.generator = LLMReminderGenerator(model=resolve_cli_model(model, config))
+    cfg.on_reminder = on_reminder
+    return cfg
+
+
+def _resolve_reminder_model(app: DeepApp) -> str | Model | None:
+    """Resolve the LLM reminder model: configured `reminder_model` or main model.
+
+    Mirrors :func:`_build_reminder_config` so live-switching to `"llm"` mode
+    uses the same model as the startup configuration instead of the generator
+    default — including the resolution step, since `app.model_name` holds the
+    raw CLI string and may carry the local-endpoint sentinel prefix.
+    """
+    from apps.cli.model_resolve import resolve_cli_model
+
+    try:
+        from apps.cli.config import load_config
+
+        reminder_model = load_config().reminder_model
+    except Exception:  # pragma: no cover - defensive: bad config shouldn't break switching
+        reminder_model = None
+    model = reminder_model or getattr(app, "model_name", None) or getattr(app, "_model", None)
+    return resolve_cli_model(model) if model else None
+
+
+def _apply_reminder_mode(app: DeepApp, mode: str) -> None:
+    """Update the running agent's PeriodicReminderCapability without restart."""
+    from pydantic_deep.features.periodic_reminder import PeriodicReminderCapability
+
+    agent = app.agent
+    if agent is None:
+        app.notify("No agent running", severity="warning")
+        return
+
+    caps: list = getattr(agent, "_capabilities", [])
+    existing = next((c for c in caps if isinstance(c, PeriodicReminderCapability)), None)
+
+    if mode == "off":
+        if existing is not None:
+            caps.remove(existing)
+        app._reminder_mode = "off"  # type: ignore[attr-defined]
+        app.notify("Selected reminder mode: off")
+        return
+
+    from pydantic_deep.features.periodic_reminder import (
+        LLMReminderGenerator,
+        make_config_for_mode,
+    )
+
+    new_config = make_config_for_mode(mode)
+    if mode == "llm":
+        model = _resolve_reminder_model(app)
+        if model is not None:
+            new_config.generator = LLMReminderGenerator(model=model)
+    new_config.on_reminder = existing.config.on_reminder if existing is not None else None
+
+    if existing is not None:
+        existing.config = new_config
+        existing._turn_counter = 0
+        existing._reminder_count = 0
+    else:
+        caps.append(PeriodicReminderCapability(config=new_config))
+
+    app._reminder_mode = mode  # type: ignore[attr-defined]
+    app.notify(f"Selected reminder mode: {_REMINDER_LABELS.get(mode, mode)}")
+
+    try:
+        from apps.cli.config import DEFAULT_CONFIG_PATH, set_config_value
+
+        set_config_value(DEFAULT_CONFIG_PATH, "periodic_reminder", str(mode != "off").lower())
+        if mode != "off":
+            set_config_value(DEFAULT_CONFIG_PATH, "reminder_mode", mode)
+    except Exception as e:
+        app.notify(
+            f"Reminder mode changed but could not persist to config: {e}", severity="warning"
+        )

@@ -1,0 +1,353 @@
+site_name: Pydantic Deep Agents
+site_description: Build Claude Code-Style AI Agents in Python
+site_url: https://vstorm-co.github.io/pydantic-deepagents/
+repo_url: https://github.com/vstorm-co/pydantic-deepagents
+repo_name: vstorm-co/pydantic-deepagents
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: pink
+      accent: pink
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: pink
+      accent: pink
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  logo: favicon.ico
+  favicon: favicon.ico
+  icon:
+    repo: fontawesome/brands/github
+    admonition:
+      note: octicons/tag-16
+      abstract: octicons/checklist-16
+      info: octicons/info-16
+      tip: octicons/squirrel-16
+      success: octicons/check-16
+      question: octicons/question-16
+      warning: octicons/alert-16
+      failure: octicons/x-circle-16
+      danger: octicons/zap-16
+      bug: octicons/bug-16
+      example: octicons/beaker-16
+      quote: octicons/quote-16
+  features:
+    # Navigation
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    # Search
+    - search.suggest
+    - search.highlight
+    - search.share
+    # Content
+    - content.tabs.link
+    - content.code.copy
+    - content.code.select
+    - content.code.annotate
+    - content.tooltips
+    # Table of contents
+    - toc.follow
+    # Header
+    - announce.dismiss
+
+plugins:
+  - search:
+      separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - social:
+      enabled: !ENV [CI, false]
+  - mkdocstrings:
+      handlers:
+        python:
+          inventories:
+            - https://docs.python.org/3/objects.inv
+            - https://ai.pydantic.dev/objects.inv
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            signature_crossrefs: true
+  - llmstxt:
+      full_output: llms-full.txt
+      sections:
+        Getting Started:
+          - index.md: Project overview and quick start
+          - installation.md: Installation instructions
+          - getting-help.md: How to get help
+        Tutorial:
+          - learn/index.md: Tutorial overview
+          - learn/first-agent.md: Your first agent
+          - learn/files-and-shell.md: Files and the shell
+          - learn/planning.md: Planning with todos
+          - learn/custom-tools.md: Custom tools
+          - learn/skills.md: Skills
+          - learn/subagents.md: Subagents
+          - learn/structured-output.md: Structured output
+          - learn/streaming.md: Streaming
+          - learn/human-in-the-loop.md: Human-in-the-loop
+          - learn/memory.md: Memory and context files
+          - learn/sessions.md: Sessions and checkpoints
+          - learn/web-and-mcp.md: Web search and MCP
+        Core Concepts:
+          - concepts/index.md: Core concepts overview
+          - concepts/agents.md: Agent creation and configuration
+          - concepts/backends.md: Backend abstraction for file operations
+          - concepts/toolsets.md: Available toolsets and custom tools
+          - concepts/skills.md: Skills system
+        Advanced:
+          - advanced/index.md: Advanced guide overview
+          - advanced/capabilities.md: Capabilities and the lifecycle
+          - advanced/hooks.md: Claude Code-style lifecycle hooks
+          - advanced/context-management.md: Context management (summarization and eviction)
+          - advanced/cost-tracking.md: Token and cost tracking
+          - advanced/stuck-loop-detection.md: Stuck loop detection
+          - advanced/periodic-reminder.md: Periodic task reminder
+          - advanced/goal.md: Goal completion loop
+          - advanced/monitor.md: Monitor (watch and react)
+          - advanced/message-queue.md: Message queue (steering and follow-up)
+          - advanced/forking.md: Live Run Forking (parallel agent branches)
+          - advanced/teams.md: Agent teams with shared todos
+          - advanced/output-styles.md: Output style customization
+          - advanced/fallback-models.md: Automatic fallback models
+          - advanced/plan-mode.md: Plan mode subagent
+          - advanced/browser.md: Browser automation via Playwright
+          - advanced/liteparse.md: Document parsing (LiteParse)
+          - advanced/agent-spec.md: Agent spec (YAML/JSON)
+          - advanced/multi-user.md: Multi-user isolation patterns
+        CLI:
+          - cli/index.md: CLI overview
+          - cli/getting-started.md: CLI install and first run
+          - cli/commands.md: CLI slash commands
+          - cli/keybindings.md: CLI keys and input
+          - cli/settings.md: CLI settings and themes
+          - cli/sessions-forking-mcp.md: CLI sessions, forking, and MCP
+        Applications:
+          - apps/index.md: Reference applications overview
+          - apps/deepresearch.md: DeepResearch app
+          - apps/acp.md: ACP editor integration (Zed)
+          - apps/harbor.md: Harbor (Terminal Bench)
+        Examples:
+          - examples/*.md
+        API Reference:
+          - api/agent.md: Agent factory API
+          - api/backends.md: Backend API
+          - api/toolsets.md: Toolset API
+          - api/capabilities.md: Capabilities API
+          - api/processors.md: Processor API
+          - api/mcp.md: MCP client API
+          - api/forking.md: Live Run Forking API
+          - api/checkpointing.md: Checkpointing API
+          - api/teams.md: Teams API
+          - api/memory.md: Memory API
+          - api/context-files.md: Context Files API
+          - api/output-styles.md: Output Styles API
+          - api/hooks.md: Hooks API
+          - api/monitoring.md: Monitoring API
+          - api/goal.md: Goal API
+          - api/tool-search.md: Tool Search API
+          - api/message-queue.md: Message Queue API
+          - api/spec.md: Agent spec (YAML/JSON) API
+          - api/types.md: Type definitions
+
+markdown_extensions:
+  # Python Markdown
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  # PyMdownx
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+      auto_title: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      auto_append:
+        - includes/abbreviations.md
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      combine_header_slug: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+extra:
+  status:
+    new: Recently added
+    deprecated: Deprecated
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/vstorm-co/pydantic-deepagents
+      name: GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pydantic-deep/
+      name: PyPI
+  analytics:
+    provider: google
+    property: !ENV GOOGLE_ANALYTICS_KEY
+  generator: false
+  version:
+    provider: mike
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/extra.js
+
+nav:
+  - Pydantic Deep Agents: index.md
+  - Installation: installation.md
+  - Learn:
+    - Tutorial — User Guide:
+      - learn/index.md
+      - Your first agent: learn/first-agent.md
+      - Files & the shell: learn/files-and-shell.md
+      - Planning with todos: learn/planning.md
+      - Custom tools: learn/custom-tools.md
+      - Skills: learn/skills.md
+      - Subagents: learn/subagents.md
+      - Structured output: learn/structured-output.md
+      - Streaming: learn/streaming.md
+      - Human-in-the-loop: learn/human-in-the-loop.md
+      - Memory & context files: learn/memory.md
+      - Sessions & checkpoints: learn/sessions.md
+      - Web search & MCP: learn/web-and-mcp.md
+    - Advanced User Guide:
+      - advanced/index.md
+      - Capabilities & lifecycle: advanced/capabilities.md
+      - Hooks: advanced/hooks.md
+      - Context management: advanced/context-management.md
+      - Cost tracking & budgets: advanced/cost-tracking.md
+      - Stuck-loop detection: advanced/stuck-loop-detection.md
+      - Periodic reminders: advanced/periodic-reminder.md
+      - Goal loop: advanced/goal.md
+      - Monitor (watch & react): advanced/monitor.md
+      - Message queue (steering): advanced/message-queue.md
+      - Live Run Forking: advanced/forking.md
+      - Agent teams: advanced/teams.md
+      - Output styles: advanced/output-styles.md
+      - Fallback models: advanced/fallback-models.md
+      - Plan mode: advanced/plan-mode.md
+      - Browser: advanced/browser.md
+      - Document parsing: advanced/liteparse.md
+      - Agent Spec: advanced/agent-spec.md
+      - Multi-user: advanced/multi-user.md
+  - Core Concepts:
+    - concepts/index.md
+    - Agents: concepts/agents.md
+    - Backends: concepts/backends.md
+    - Toolsets: concepts/toolsets.md
+    - Skills: concepts/skills.md
+  - CLI:
+    - cli/index.md
+    - Install & first run: cli/getting-started.md
+    - Commands: cli/commands.md
+    - Keys & input: cli/keybindings.md
+    - Settings & themes: cli/settings.md
+    - Sessions, forking & MCP: cli/sessions-forking-mcp.md
+  - Applications:
+    - apps/index.md
+    - DeepResearch: apps/deepresearch.md
+    - ACP adapter (Zed): apps/acp.md
+    - Harbor (Terminal Bench): apps/harbor.md
+  - Examples:
+    - examples/index.md
+    - Getting Started:
+      - examples/basic-usage.md
+      - examples/filesystem.md
+      - examples/composite-backend.md
+    - Agent Features:
+      - examples/subagents.md
+      - examples/custom-tools.md
+      - examples/skills.md
+      - examples/file-uploads.md
+      - examples/thinking.md
+      - examples/web-tools.md
+      - examples/mcp.md
+    - Execution:
+      - examples/docker-sandbox.md
+      - examples/docker-runtimes.md
+      - examples/streaming.md
+      - examples/human-in-the-loop.md
+    - Applications:
+      - examples/interactive-chat.md
+      - examples/full-app.md
+  - API Reference:
+    - api/index.md
+    - Agent: api/agent.md
+    - Backends: api/backends.md
+    - Toolsets: api/toolsets.md
+    - Capabilities: api/capabilities.md
+    - Processors: api/processors.md
+    - MCP: api/mcp.md
+    - Forking: api/forking.md
+    - Checkpointing: api/checkpointing.md
+    - Teams: api/teams.md
+    - Memory: api/memory.md
+    - Context Files: api/context-files.md
+    - Output Styles: api/output-styles.md
+    - Hooks: api/hooks.md
+    - Monitoring: api/monitoring.md
+    - Goal: api/goal.md
+    - Tool Search: api/tool-search.md
+    - Message Queue: api/message-queue.md
+    - Agent Spec: api/spec.md
+    - Types: api/types.md
+  - Resources:
+    - Getting Help: getting-help.md
+    - Contributing: contributing.md
+
+# C4 and architecture pages are internal design docs, intentionally left out of
+# the published site (and out of nav). Excluding them keeps their work-in-progress
+# cross-links from failing the strict build.
+exclude_docs: |
+  c4/
+  architecture/
+
+validation:
+  nav:
+    omitted_files: info

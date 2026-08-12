@@ -1,0 +1,16 @@
+/opt/pydantic-deep-venv/lib/python3.12/site-packages/pydantic_ai/capabilities/builtin_or_local.py:74: UserWarning: WebSearch local fallback requires the `duckduckgo` optional group — `pip install "pydantic-ai-slim[duckduckgo]"`. Without it, WebSearch only works with models that support it natively.
+  self.local = self._default_local()
+/opt/pydantic-deep-venv/lib/python3.12/site-packages/pydantic_deep/agent.py:659: UserWarning: Default skills directory 'skills' does not exist. No skills will be loaded.
+  skills_toolset = SkillsToolset(
+[   0.0s] model request...
+[  14.6s]   thinking: 62 chars
+[  14.6s] tool: read_file({"path":"/app/decomp.c"})
+[  14.6s] tool: read_file({"path":"/app/data.txt"})
+[  14.6s]   -> read_file: 1:fb|In information theory, data compression, source coding,[1] or bit-rate reduction is the process of encoding informa
+[  14.6s]   -> read_file: 1:ae|#include <stdio.h>
+2:8c|#include <stdlib.h>
+3:6d|#define W for (i=0;i<tmp;i++)
+4:d4|
+5:9c|int i;
+6:0f|int radix = 2
+[  14.6s] model request...

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["pep621"],
+  "packageRules": [
+    {
+      "description": "Disable updates for everything by default — this repo only tracks vstorm-co sibling packages.",
+      "matchPackageNames": ["*"],
+      "enabled": false
+    },
+    {
+      "description": "Bump pyproject floor + uv.lock and auto-merge for vstorm-co sibling packages.",
+      "matchPackageNames": [
+        "pydantic-ai-todo",
+        "pydantic-ai-backend",
+        "summarization-pydantic-ai",
+        "subagents-pydantic-ai",
+        "pydantic-ai-shields"
+      ],
+      "enabled": true,
+      "groupName": "vstorm-co packages",
+      "rangeStrategy": "bump",
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
+    }
+  ]
+}

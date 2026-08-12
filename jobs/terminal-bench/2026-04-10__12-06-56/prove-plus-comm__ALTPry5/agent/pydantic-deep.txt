@@ -1,0 +1,5 @@
+Usage: pydantic-deep [OPTIONS] COMMAND [ARGS]...
+Try 'pydantic-deep --help' for help.
+╭─ Error ──────────────────────────────────────────────────────────────────────╮
+│ No such command 'run'.                                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯

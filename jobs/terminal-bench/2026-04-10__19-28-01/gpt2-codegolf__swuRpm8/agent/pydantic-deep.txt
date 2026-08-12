@@ -1,0 +1,107 @@
+/opt/pydantic-deep-venv/lib/python3.12/site-packages/pydantic_ai/capabilities/builtin_or_local.py:74: UserWarning: WebSearch local fallback requires the `duckduckgo` optional group — `pip install "pydantic-ai-slim[duckduckgo]"`. Without it, WebSearch only works with models that support it natively.
+  self.local = self._default_local()
+/opt/pydantic-deep-venv/lib/python3.12/site-packages/pydantic_deep/agent.py:659: UserWarning: Default skills directory 'skills' does not exist. No skills will be loaded.
+  skills_toolset = SkillsToolset(
+[   0.0s] model request...
+[  16.2s]   thinking: 814 chars
+[  16.2s] tool: execute({"command":"xxd /app/gpt2-124M.ckpt | head -100"})
+[  16.2s] tool: execute({"command":"wc -c /app/gpt2-124M.ckpt"})
+[  16.2s] tool: execute({"command":"xxd /app/vocab.bpe | head -50"})
+[  16.2s] tool: execute({"command":"wc -l /app/vocab.bpe && head -5 /app/vocab.bpe && tail -5 /app/vocab)
+[  16.3s]   -> execute: sh: 1: xxd: not found
+
+[  16.3s]   -> execute: sh: 1: xxd: not found
+
+[  16.3s]   -> execute: 497759232 /app/gpt2-124M.ckpt
+
+[  16.3s]   -> execute: 50001 /app/vocab.bpe
+#version: 0.2
+Ġ t
+Ġ a
+h e
+i n
+om inated
+Ġreg ress
+ĠColl ider
+Ġinform ants
+Ġg azed
+
+[  16.3s] model request...
+[  26.8s]   thinking: 229 chars
+[  26.8s] tool: execute({"command":"od -A x -t x1z -N 256 /app/gpt2-124M.ckpt"})
+[  26.8s] tool: execute({"command":"head -1 /app/vocab.bpe && head -10 /app/vocab.bpe"})
+[  26.8s]   -> execute: 000000 03 ef f5 3e c0 82 06 bf 90 c8 db be 36 e5 52 be  >...>........6.R.<
+000010 a6 cc 02 be 6b 6f c3 bd 2b aa b4 be ba
+[  26.8s]   -> execute: #version: 0.2
+#version: 0.2
+Ġ t
+Ġ a
+h e
+i n
+r e
+o n
+Ġt he
+e r
+Ġ s
+
+[  26.8s] model request...
+[  96.8s]   thinking: 6824 chars
+[  96.8s] tool: execute({"command":"which python3 && python3 --version"})
+[  96.8s] tool: execute({"command":"pip list 2>/dev/null | grep -i tensor"})
+[  96.9s]   -> execute: Command failed (exit code 1):
+
+[  96.9s]   -> execute: /opt/pydantic-deep-venv/bin/python3
+Python 3.12.3
+
+[  96.9s] model request...
+[ 113.3s]   thinking: 602 chars
+[ 113.3s] tool: execute({"command":"python3 -c \"\nimport struct\nwith open('/app/gpt2-124M.ckpt', 'rb'))
+[ 113.4s]   -> execute: First 100 bytes hex: 03eff53ec08206bf90c8dbbe36e552bea6cc02be6b6fc3bd2baab4beba989cbdef043cbd7db719bd738461bcb6373dbef67
+[ 113.4s] model request...
+[ 152.1s]   thinking: 3099 chars
+[ 152.1s] tool: execute({"command":"python3 -c \"\nimport struct\n\n# Try to parse as TF checkpoint v1 f)
+[ 152.3s]   -> execute: First record: crc=1056304899, length=3204874944
+Length too large, not a TF v1 checkpoint
+
+[ 152.3s] model request...
+[ 188.2s]   thinking: 3370 chars
+[ 188.2s] tool: execute({"command":"python3 -c \"\nimport struct\n\nwith open('/app/gpt2-124M.ckpt', 'rb)
+[ 188.4s]   -> execute: Last 100 bytes hex: 57128c3d5f5f1cbda8a1153edf51043dddf1503cbc76b9bd71b4c53c09b31bbe91cb573e2106c1bed8021e3c8cc4e33c35be
+[ 188.4s] model request...
+[ 218.7s]   thinking: 2983 chars
+[ 218.7s] tool: execute({"command":"python3 -c \"\nimport struct\n\nwith open('/app/gpt2-124M.ckpt', 'rb)
+[ 218.9s]   -> execute: At base (ln_1.weight?): min=-0.4365, max=0.4971, mean=0.0147
+  First 10: (0.012613765895366669, 0.1112576425075531, -0.0
+[ 218.9s] model request...
+[ 260.8s]   thinking: 4438 chars
+[ 260.9s] tool: execute({"command":"python3 -c \"\nimport struct\n\nwith open('/app/gpt2-124M.ckpt', 'rb)
+[ 264.8s]   -> execute: Magic bytes: 03eff53e = b'\x03\xef\xf5>'
+Found 0 potential layer norm weight locations:
+
+[ 264.8s] model request...
+[ 298.5s]   thinking: 5188 chars
+[ 298.5s] tool: execute({"command":"python3 -c \"\nimport struct\n\nwith open('/app/gpt2-124M.ckpt', 'rb)
+[ 298.7s]   -> execute: First 20 uint32: (1056304899, 3204874944, 3202074768, 3193103670, 3187854502, 3183701867, 3199511083, 3181156538, 317482
+[ 298.7s] model request...
+[ 346.4s]   thinking: 6074 chars
+[ 346.4s] tool: execute({"command":"pip install tensorflow 2>&1 | tail -5","timeout":120})
+[ 346.5s]   -> execute: sh: 1: pip: not found
+
+[ 346.5s] model request...
+[ 351.3s] tool: execute({"command":"pip3 install tensorflow 2>&1 | tail -5","timeout":120})
+[ 351.4s]   -> execute: sh: 1: pip3: not found
+
+[ 351.4s] model request...
+[ 357.5s] tool: execute({"command":"python3 -m pip install tensorflow 2>&1 | tail -10","timeout":120})
+[ 357.7s]   -> execute: /opt/pydantic-deep-venv/bin/python3: No module named pip
+
+[ 357.7s] model request...
+[ 412.9s]   thinking: 5572 chars
+[ 412.9s] tool: execute({"command":"python3 -c \"\nimport struct\n\n# Scan the file for layer norm weigh)
+[ 416.3s]   -> execute: Found 0 potential layer norm weight locations:
+
+[ 416.3s] model request...
+[ 852.7s]   thinking: 102466 chars
+[ 852.8s] tool: execute({"command":"python3 -c \"\nimport struct\n\n# Check the end of the file for TF c)
+[ 853.0s]   -> execute: Last 200 bytes repr: b'\r\x7f\x85\xbey\xef1=\xefG\x81\xbb\xe0\xd6(?\x92\xd0\x98<C\xb5\x13\xbc\xfbT\x8e\xbd\xbbgs<x\x0c\x
+[ 853.0s] model request...
