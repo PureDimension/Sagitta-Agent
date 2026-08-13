@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["planning_response_json"],
+  "properties": {
+    "planning_response_json": {"type": "string"}
+  }
+}

@@ -67,15 +67,15 @@ The core loop: **Natural Language → Workflow Compilation → Boundary Confirma
 | **Dialogue** | Natural language conversation, intent detection | Same process as task engine; split later if needed |
 | **Memory** | User/project understanding, task history, decision outcomes | Structured experience first; selective retrieval as history grows |
 | **Intent Router** | Distinguishes chat from tasks from tool calls | Natural language, no explicit prefixes |
-| **Task Engine** | Workflow planning, state machine execution, gating | Phase-level state machine (ARIS style: `pending → done → accepted`) |
+| **Task Engine** | Workflow planning, later state-machine execution and gating | Planning IR now; ARIS-style runtime states later |
 
 ### Task Engine Details
 
 The Task Engine is the core differentiator. It wraps coding agents (Claude Code, Codex, DeepSeek) in a state-machine orchestration layer:
 
-1. **Planner**: Converts natural language requirements into a structured workflow. A minimal lightweight language/IR is a Phase 1 contract; public syntax may remain experimental.
+1. **Planner**: Converts natural language requirements into a structured workflow. The current planning core uses Codex read-only workspace inspection, persisted user decisions over one resumed session, a canonical few-shot prompt, local IR validation, and one structural repair attempt.
 
-2. **State Machine**: Phase-level execution with ARIS-style gating:
+2. **Future State Machine**: Phase-level execution will use ARIS-style gating:
    - `pending → running → done → accepted`
    - `accepted` requires the declared policy: machine evidence, independent AI review, or human approval
    - `done`-but-not-`accepted` phases are re-validated on resume
@@ -129,10 +129,12 @@ Sagitta does not modify its execution units (Claude Code, Codex, model APIs). Th
 ## Relationship to ARIS
 
 Sagitta inherits ARIS's core patterns:
-- Type-A / Type-B acceptance-gate separation
 - File-based artifact contracts between phases
-- Phase-level state machine (`pending → done → accepted`)
+- Bounded retry and structural fallback rather than unbounded patching
+- Future runtime separation between execution completion and acceptance
 - Skill/workflow composability
+
+ARIS Type-A / Type-B is a future runtime acceptance-policy distinction. It does not divide the Plan IR into two node classes: `explore`, `design`, `implement`, `test`, and `review` remain equal, explicit business phases.
 
 What Sagitta adds that ARIS lacks:
 - **Intent parsing**: Natural language → workflow plan (ARIS requires you to know which skill to invoke)
@@ -143,30 +145,23 @@ What Sagitta adds that ARIS lacks:
 
 ## Development Phases
 
-### Phase 1: CLI Core
-- `sagitta "do something"` — natural language to task execution
-- Minimal lightweight workflow language/IR and static validation
-- Validated workflow revisions during a run
-- Phase-level state machine with selective human gates
-- Provider routing (Claude Code + DeepSeek)
-- Permission tiers
-- Minimal persistent persona, user model, and decision history
+### 1. Implemented: Planning Core
+- `sagitta init`, `plan`, `answer`, and `show`
+- Read-only Codex workspace inspection
+- Natural language → validated Plan IR
+- Persistent Q&A, raw events, planning state, and ready IR
 
-### Phase 2: Persona & Experience
-- Deeper high-agency persona and independent decision continuity
-- Experience-backed learning and selective retrieval
-- Cross-session continuity
-- User and project understanding
+### 2. Temporary Execution Bridge
+- `sagitta goal <plan-id>` exports a paste-ready Codex App Goal for initial use
+- Goal temporarily maintains workspace-local traversal evidence; it is not Sagitta's future runtime
 
-### Phase 3: Social & Multi-Platform
-- WeChat/IM integration
-- Proactive check-ins and notifications
-- Multi-user support
+### 3. Durable Execution
+- Plan IR → DBOS workflow compiler
+- DBOS execution runtime with deterministic output checks
 
-### Phase 4: Advanced Autonomy
-- Self-initiated tasks (reminders, follow-ups)
-- Richer workflow composition
-- Visual workflow editor / dashboard
+### 4. Sagitta Collaboration Layer
+- Persistent persona, task supervision, experience, user/project understanding
+- Later model routing, social integration, and visual management
 
 ---
 
@@ -182,9 +177,11 @@ What Sagitta adds that ARIS lacks:
 ## For AI Agents Reading This
 
 This file is the canonical design document for Sagitta-Agent. When contributing:
+- Sagitta is developed from first principles, but its authors do not need to rediscover mature solutions. Before designing or implementing a subsystem, assess mature open-source implementations and platform capabilities that solve the same bounded problem. If adopting or adapting one offers a clearer, safer, or materially lower-maintenance result than a bespoke design, explain that option and its trade-offs to the author before proceeding. Preserve Sagitta's product semantics where they are core; reuse proven infrastructure where they are not.
 - The Task Engine follows ARIS's acceptance-gate pattern (`acceptance-gate.md`): an executor can DRIVE but cannot silently change or acquit its own acceptance policy
 - The Persona Layer has high agency and may push back — this is by design, not a bug
-- All state machine phases persist to `.sagitta/runs/<run_id>.json`
+- Planning sessions persist at `~/.sagitta/plans/<plan-id>/`; future execution runs will persist separately at `.sagitta/runs/<run-id>.json`
+- A Plan IR phase has `outputs` and `expected_facts` as business contracts; runtime state, worktrees, counters, checkpoints, and permissions are not workflow phases
 - A minimal workflow language/IR is a Phase 1 design contract; keep it small, inspectable, AI-generable, and statically validatable
 - Execution units (Claude Code, Codex, model APIs) are pluggable adapters behind the bridge layer; the orchestration layer never depends on any specific one
 - The durable workflow runtime and persistent persona/collaboration model are Sagitta's cores; do not outsource their product semantics to an executor

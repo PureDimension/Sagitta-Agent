@@ -1,0 +1,161 @@
+"""Persistent local configuration and planning-run records."""
+
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from pathlib import Path
+from typing import Any
+
+
+class StorageError(RuntimeError):
+    """Raised when a Sagitta configuration or planning record is unavailable."""
+
+
+def default_home() -> Path:
+    return Path.home() / ".sagitta"
+
+
+def _write_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _write_text(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(value)
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise StorageError(f"missing file: {path}") from error
+    except json.JSONDecodeError as error:
+        raise StorageError(f"invalid JSON in {path}: {error}") from error
+    if not isinstance(value, dict):
+        raise StorageError(f"expected a JSON object in {path}")
+    return value
+
+
+class ConfigStore:
+    """Stores the single v1 RunConfig: a configured workspace."""
+
+    def __init__(self, home: Path | None = None) -> None:
+        self.home = home or default_home()
+        self.path = self.home / "config.json"
+
+    def save_workspace(self, workspace: Path) -> dict[str, str]:
+        resolved = workspace.expanduser().resolve()
+        if not resolved.is_dir():
+            raise StorageError(f"workspace is not a directory: {resolved}")
+        config = {"workspace": str(resolved)}
+        _write_json(self.path, config)
+        return config
+
+    def load(self) -> dict[str, str]:
+        config = _read_json(self.path)
+        workspace = config.get("workspace")
+        if not isinstance(workspace, str) or not workspace:
+            raise StorageError(f"config has no workspace: {self.path}")
+        path = Path(workspace)
+        if not path.is_dir():
+            raise StorageError(f"configured workspace is unavailable: {path}")
+        return {"workspace": str(path)}
+
+
+class PlanningRunStore:
+    """Persists each planning session as an inspectable local plan directory."""
+
+    def __init__(self, home: Path | None = None) -> None:
+        self.home = home or default_home()
+        self.plans = self.home / "plans"
+
+    def directory_for(self, run_id: str) -> Path:
+        if not run_id or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789-" for char in run_id):
+            raise StorageError(f"invalid planning run id: {run_id!r}")
+        return self.plans / run_id
+
+    def path_for(self, run_id: str) -> Path:
+        """Return the current-state path for compatibility with simple callers."""
+        return self.directory_for(run_id) / "state.json"
+
+    def create(self, record: dict[str, Any]) -> None:
+        run_id = record.get("id")
+        if not isinstance(run_id, str):
+            raise StorageError("planning record has no id")
+        directory = self.directory_for(run_id)
+        try:
+            directory.mkdir(parents=True, exist_ok=False)
+        except FileExistsError as error:
+            raise StorageError(f"planning run already exists: {run_id}") from error
+        _write_json(directory / "state.json", record)
+
+    def save(self, record: dict[str, Any]) -> None:
+        run_id = record.get("id")
+        if not isinstance(run_id, str):
+            raise StorageError("planning record has no id")
+        _write_json(self.path_for(run_id), record)
+
+    def load(self, run_id: str) -> dict[str, Any]:
+        return _read_json(self.path_for(run_id))
+
+    def append_event(self, run_id: str, event: dict[str, Any]) -> None:
+        if not isinstance(event, dict):
+            raise StorageError("planning event must be an object")
+        path = self.directory_for(run_id) / "events.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True))
+            handle.write("\n")
+
+    def save_codex_call(
+        self,
+        run_id: str,
+        sequence: int,
+        label: str,
+        stdout: str,
+        stderr: str,
+        response: dict[str, Any],
+    ) -> None:
+        if sequence < 0:
+            raise StorageError("Codex call sequence must be non-negative")
+        if label not in {"initial", "resume"}:
+            raise StorageError(f"unknown Codex call label: {label}")
+        prefix = self.directory_for(run_id) / "codex" / f"{sequence:03d}-{label}"
+        _write_text(prefix.with_suffix(".events.jsonl"), stdout)
+        _write_text(prefix.with_suffix(".stderr.log"), stderr)
+        _write_json(prefix.with_suffix(".response.json"), response)
+
+    def save_ir(self, run_id: str, workflow: dict[str, Any]) -> None:
+        _write_json(self.directory_for(run_id) / "ir.json", workflow)
+
+    def load_ir(self, run_id: str) -> dict[str, Any]:
+        return _read_json(self.directory_for(run_id) / "ir.json")
+
+    def save_goal(self, run_id: str, goal: str) -> Path:
+        path = self.directory_for(run_id) / "goal" / "GOAL.md"
+        _write_text(path, goal)
+        return path

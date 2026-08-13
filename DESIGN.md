@@ -28,41 +28,47 @@ Execution units are **pluggable adapters** behind the bridge layer, never part o
 
 ---
 
-## Core Loop
+## Current Planning Core
 
 ```
-Human: "Research papers on agent memory systems; check if they can be applied to ARIS"
-
-Step 1 — INTENT AND WORKFLOW COMPILATION:
-  Sagitta generates a 4-phase plan:
-    1. Literature search (DeepSeek, ~5min)
-    2. Feasibility analysis (Claude, ~10min)
-    3. Evidence review (configured reviewer, ~5min)
-    4. Integration proposal (Claude, ~15min)
-  Sagitta records its assumptions and asks only about a boundary that would materially
-  change the result.
-  Sagitta: "I will include feasibility analysis and an integration proposal. The run can
-            write reports but not modify ARIS. Proceed?"
-  Human: "OK, go ahead"
-
-Step 3 — EXECUTION (autonomous):
-  Phase 1 runs → done → auto-proceeds
-  Phase 2 runs → done → configured evidence review
-  Evidence gate passes → proceeds
-  Phase 3 runs → done → human gate only if a real product decision remains
-
-Step 4 — REPORTING:
-  Sagitta: "Found 15 papers, 3 highly relevant. Feasibility: both Option A (direct
-            integration) and Option B (wrapper layer) work; the reviewer recommends B.
-            Full report at ~/sagitta/reports/2026-08-11-agent-memory.md.
-            Want to discuss implementing Option B now?"
+Human NL + configured workspace
+  → Codex planner reads the workspace in read-only mode
+  → asks focused questions only when a user decision is needed
+  → same Codex session receives each newly supplied answer
+  → returns a canonical Plan IR
+  → Sagitta validates it locally and permits one same-session structural repair
+  → persists the ready IR, Q&A, raw Codex events, and planning state
 ```
+
+The repository currently implements this planning core. It does not yet execute a Plan IR.
+
+### Manual Goal compatibility bridge
+
+For immediate manual use, `sagitta goal <plan-id>` compiles a ready Plan IR into a self-contained `goal/GOAL.md` and prints it for pasting into a Codex App Goal. The Goal text contains the task context, planning decisions, fixed ARIS-inspired execution protocol, every phase's business contract, and the compiled navigation graph. Since Sagitta does not yet run the graph, Goal temporarily records its own traversal in an uncommitted workspace-local `.sagitta-goal-state.json`. This is a compatibility layer rather than the future runtime: it cannot provide independent acceptance, external monitoring, or adaptive supervision.
+
+### Planning conversation continuity
+
+The initial planner prompt contains the user task and workspace-planning instructions only. When planning returns `needs_input`, Sagitta persists the question and answer, then resumes the same Codex session with only the newly provided answer. Codex retains the prior conversation; Sagitta retains the full Q&A as durable plan state for audit and future execution context, without reinjecting it into the prompt.
+
+### Plan IR v2
+
+The Plan IR is a small, statically validated business graph:
+
+- workflow root: `title`, `goal`, `project_summary`, `assumptions`, `entry_phase`, `phases`;
+- a `phase`: `id`, `title`, `kind`, `objective`, `outputs`, `expected_facts`, `timeout_seconds`, `on`;
+- a `scope`: `id`, `entry_phase`, child `phases`, used only for real hierarchy or bounded nested loops;
+- `on` maps task-specific outcomes directly to phase/scope targets or `$complete`; ordered conditional routes may read runtime counters;
+- `outputs` are business artifacts; `expected_facts` are postconditions that should be confirmable after the phase. Neither is an executor self-verdict.
+
+`explore`, `design`, `implement`, `test`, and `review` are equal phase kinds. The IR is deliberately flat: a design, test, or review step becomes an explicit phase when it has its own output, failure path, retry boundary, or navigation decision. Runtime bookkeeping is not represented as business work.
+
+Runtime owns worktrees, permissions, checkpoints, counters, logs, heartbeats, resource handling, and internal phase status. The IR may declare counter conditions such as `$phase.retry < 2`, but runtime stores and evaluates their values; the execution agent need not see them.
 
 ---
 
-## State Machine
+## Future Execution Runtime
 
-### Phase States
+### Runtime Phase States
 
 ```
 pending ──→ running ──→ done ──→ accepted
@@ -76,26 +82,26 @@ pending ──→ running ──→ done ──→ accepted
 |-------|---------|------------|
 | `pending` | Not started | System |
 | `running` | In progress | Executor |
-| `done` | Execution complete, artifact exists | Executor (Type-A: machine-checkable) |
+| `done` | Executor reports that its phase work and declared outputs are complete | Executor |
 | `failed` | Execution errored | Executor |
 | `accepted` | Declared acceptance policy satisfied | Machine evidence, independent AI review, or human |
 | `skipped` | Phase not applicable | Human |
 
-### Gate Types
+### Acceptance policy
 
-- **Type-A** (machine-checkable): Exit code 0, file exists, counter reached → Can self-judge
-- **Type-B** (quality judgment): "Is this correct?", "Is this good enough?" → Route according to policy: an independent AI context, an optional different model family, or a human
-- **Human**: Pause and wait for explicit human approval
+- **Type-A**: machine-observable facts such as exit codes, files, hashes, parsable results, and counters. The runtime can check them deterministically.
+- **Type-B**: quality or correctness judgments such as “is this sufficient?” or “does this claim hold?” These are future acceptance-policy decisions, handled by an explicit review phase, an independent model, or a human as appropriate.
+- This distinction governs runtime acceptance provenance. It does not create two kinds of IR nodes and does not replace ordinary graph transitions.
 
 ### Resume
 
 - On crash/restart: resolve forward to first non-terminal phase (`done`-but-not-`accepted` is re-validated)
-- State file: `.sagitta/runs/<run_id>.json`
+- Future execution state: `.sagitta/runs/<run_id>.json`; current planning state: `~/.sagitta/plans/<plan-id>/state.json`
 - Single-writer contract with atomic temp-file replace
 
 ---
 
-## Provider Router
+## Future Provider Router
 
 | Provider | Role | Typical Phase Types |
 |----------|------|-------------------|
@@ -193,22 +199,18 @@ Sagitta: "Monday's paper analysis is 2/3 done; you've been offline since Tuesday
 
 ## Interaction Flow
 
-### Phase 1: CLI Only
+### Current planner CLI
 
 ```bash
-$ sagitta "Analyze the architecture of ~/project"
-# Sagitta asks clarifying questions
-# Sagitta proposes a plan
-# User approves
-# Sagitta executes autonomously with status updates
-# Sagitta reports when done
-
-$ sagitta --status     # Check current run status
-$ sagitta --approve    # Approve current phase
-$ sagitta --resume     # Resume last run
+$ sagitta init --workspace ~/project
+$ sagitta plan "Analyze this project's architecture"
+$ sagitta answer <plan-id> <question-id> "Use the existing module boundary"
+$ sagitta show <plan-id>
 ```
 
-### Phase 2: Daemon Mode
+This CLI creates Plan IRs and exports manual Codex Goals. DBOS compilation and Sagitta-managed task execution are later stages.
+
+### Future Daemon Mode
 
 ```bash
 $ sagitta --daemon     # Start persistent agent
@@ -217,7 +219,7 @@ $ sagitta --daemon     # Start persistent agent
 # Runs scheduled tasks via systemd timers
 ```
 
-### Phase 3: Social Integration
+### Future Social Integration
 
 ```
 WeChat/QQ → Sagitta Bridge → Intent Router → Task Engine
@@ -225,36 +227,34 @@ WeChat/QQ → Sagitta Bridge → Intent Router → Task Engine
 
 ---
 
-## Lightweight Workflow Language (Phase 1)
+## Lightweight Workflow Language
 
 Natural language is the authoring interface; the workflow language is Sagitta's inspectable execution contract. Defining its minimal internal representation is part of Phase 1, even if the public syntax remains experimental.
 
-The first version should express only:
+The implemented planning representation expresses:
 
 - workflow goal and explicit assumptions
-- phases and dependencies
-- executor capability rather than a hard-coded provider
-- produced artifacts
-- acceptance gates
-- permissions and side-effect scope
-- retry and token budgets
-- failure and escalation behavior
-- workflow revision metadata
+- phases, scopes, and explicit navigation
+- phase outputs and expected facts
+- per-phase timeout
+- bounded counter-based retry/navigation conditions
+
+The later runtime adds execution state, deterministic completion checks, permissions, side-effect scope, acceptance policies, and workflow revision metadata. These are deliberately outside the first IR contract.
 
 The language must be human-readable, AI-generable, statically validatable, and small enough that generation is reliable. A running workflow may be revised through a validated patch. The runtime records every revision and re-checks whether completed phases remain valid; an executor may propose a revision but cannot silently rewrite its own acceptance conditions.
 
 ---
 
-## Tech Stack
+## Implementation and planned stack
 
-| Component | Choice |
-|-----------|--------|
-| Execution Units | Claude Code (subprocess), Codex, DeepSeek API — pluggable adapters behind the bridge layer |
-| State Machine | Custom (Python, ~200 lines) |
-| Memory | SQLite + Chroma/FAISS + bge-reranker-v2-m3 |
-| CLI | Typer + Rich |
-| API | FastAPI (later) |
-| Daemon | systemd timer (macOS: launchd) |
+| Component | Current or planned choice |
+|-----------|--------------------------|
+| Planner | Codex CLI (`gpt-5.6-terra`, high reasoning) in read-only workspace mode |
+| Plan persistence | Python file store under `~/.sagitta/plans/` |
+| Plan IR validation | Custom Python validator |
+| Manual compatibility bridge | Plan IR → paste-ready Codex App Goal |
+| Durable execution | Plan IR → DBOS compiler, then DBOS runtime (planned) |
+| Persona and memory | Added after a usable execution path; storage choice undecided |
 
 ---
 
