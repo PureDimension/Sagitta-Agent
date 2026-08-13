@@ -32,19 +32,19 @@ Execution units are **pluggable adapters** behind the bridge layer, never part o
 
 ```
 Human NL + configured workspace
-  → Codex planner reads the workspace in read-only mode
-  → asks focused questions only when a user decision is needed
+  → Codex planner inspects the workspace and writes its plan contract package
+  → may ask focused questions whenever a user decision is needed
   → same Codex session receives each newly supplied answer
-  → returns a canonical Plan IR
-  → Sagitta validates it locally and permits one same-session structural repair
-  → persists the ready IR, Q&A, raw Codex events, and planning state
+  → writes ARIS-style global and phase contracts plus the canonical `ir.json`
+  → returns only planning status; Sagitta validates `ir.json` locally and permits one same-session structural repair
+  → persists the ready Plan Package, Q&A, raw Codex events, and planning state
 ```
 
 The repository currently implements this planning core. It does not yet execute a Plan IR.
 
 ### Manual Goal compatibility bridge
 
-For immediate manual use, `sagitta goal <plan-id>` compiles a ready Plan IR into a self-contained `goal/GOAL.md` and prints it for pasting into a Codex App Goal. The Goal text contains the task context, planning decisions, fixed ARIS-inspired execution protocol, every phase's business contract, and the compiled navigation graph. Since Sagitta does not yet run the graph, Goal temporarily records its own traversal in an uncommitted workspace-local `.sagitta-goal-state.json`. This is a compatibility layer rather than the future runtime: it cannot provide independent acceptance, external monitoring, or adaptive supervision.
+For immediate manual use, `sagitta goal <plan-id>` compiles a ready Plan IR into a self-contained `goal/GOAL.md` and prints it for pasting into a Codex App Goal. The Goal text contains task context, planning decisions, a fixed ARIS-inspired execution protocol, and the compiled navigation graph. Before work it explicitly links the global task contract, and before each phase it links its matching phase contract. Since Sagitta does not yet run the graph, Goal temporarily records its own traversal in an uncommitted workspace-local `.sagitta-goal-state.json`; its final user response remains task-defined. This is a compatibility layer rather than the future runtime: it cannot provide independent acceptance, external monitoring, or adaptive supervision.
 
 ### Planning conversation continuity
 
@@ -62,7 +62,9 @@ The Plan IR is a small, statically validated business graph:
 
 `explore`, `design`, `implement`, `test`, and `review` are equal phase kinds. The IR is deliberately flat: a design, test, or review step becomes an explicit phase when it has its own output, failure path, retry boundary, or navigation decision. Runtime bookkeeping is not represented as business work.
 
-Runtime owns worktrees, permissions, checkpoints, counters, logs, heartbeats, resource handling, and internal phase status. The IR may declare counter conditions such as `$phase.retry < 2`, but runtime stores and evaluates their values; the execution agent need not see them.
+The Plan Package complements the small IR with free-text contracts under `~/.sagitta/plans/<plan-id>/`: `TASK_CONTRACT.md` defines the task-wide source of truth; `phases/<phase-id>.md` defines each phase's concrete inputs, boundaries, evidence, gates, recovery, and handoff; and `ir.json` is the planner-written workflow. The planner may revise these documents during planning and must write all required files before `ready`; the structured ready response carries only status, while Sagitta validates `ir.json` locally as the single workflow source. This retains ARIS's rich task-specific contract without turning it into a large, low-signal JSON schema.
+
+Runtime owns worktrees, permissions, checkpoints, counters, logs, heartbeats, resource handling, and internal phase status. The IR may declare counter conditions such as `$phase.retry < 2`, but runtime stores and evaluates their values; the execution agent need not see them. A phase's `.retry` counter means a direct transition back to itself only; a repair path that passes through another phase must bound its attempts with a scope or workflow entry counter.
 
 ---
 
@@ -89,7 +91,7 @@ pending ──→ running ──→ done ──→ accepted
 
 ### Acceptance policy
 
-- **Type-A**: machine-observable facts such as exit codes, files, hashes, parsable results, and counters. The runtime can check them deterministically.
+- **Type-A**: machine-observable facts such as exit codes, files, hashes, parsable results, and counters. A phase may decide at its start to create or revise its own focused checker, run it before outcome selection, and leave it for final task-level audit; the later runtime can execute these checks deterministically.
 - **Type-B**: quality or correctness judgments such as “is this sufficient?” or “does this claim hold?” These are future acceptance-policy decisions, handled by an explicit review phase, an independent model, or a human as appropriate.
 - This distinction governs runtime acceptance provenance. It does not create two kinds of IR nodes and does not replace ordinary graph transitions.
 
@@ -249,7 +251,7 @@ The language must be human-readable, AI-generable, statically validatable, and s
 
 | Component | Current or planned choice |
 |-----------|--------------------------|
-| Planner | Codex CLI (`gpt-5.6-terra`, high reasoning) in read-only workspace mode |
+| Planner | Codex CLI (`gpt-5.6-terra`, high reasoning) with workspace-write access for its plan package and short planning checks; source edits and delivery work remain prohibited |
 | Plan persistence | Python file store under `~/.sagitta/plans/` |
 | Plan IR validation | Custom Python validator |
 | Manual compatibility bridge | Plan IR → paste-ready Codex App Goal |

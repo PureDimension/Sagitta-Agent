@@ -4,60 +4,55 @@ import json
 from importlib import resources
 import unittest
 
-from sagitta.ir import ValidationError, validate_planning_response
+from sagitta.ir import ValidationError, validate_planning_response, validate_workflow
 
 
-def ready_response() -> dict:
+def workflow() -> dict:
     return {
-        "status": "ready",
-        "summary": "A linear plan.",
-        "questions": [],
-        "workflow": {
-            "title": "Example",
-            "goal": "Do the work.",
-            "project_summary": "A Python project.",
-            "assumptions": ["Use existing tests."],
-            "entry_phase": "explore",
-            "phases": [
-                {
-                    "type": "phase",
-                    "id": "explore",
-                    "title": "Explore",
-                    "kind": "explore",
-                    "objective": "Read the project.",
-                    "outputs": ["A project inventory."],
-                    "expected_facts": ["The relevant project constraints are identified."],
-                    "timeout_seconds": 60,
-                    "on": {"done": "implement"},
-                },
-                {
-                    "type": "phase",
-                    "id": "implement",
-                    "title": "Implement",
-                    "kind": "implement",
-                    "objective": "Make the change.",
-                    "outputs": ["The requested source change."],
-                    "expected_facts": ["The requested behavior is implemented."],
-                    "timeout_seconds": 120,
-                    "on": {"done": "$complete"},
-                },
-            ],
-        },
+        "title": "Example",
+        "goal": "Do the work.",
+        "project_summary": "A Python project.",
+        "assumptions": ["Use existing tests."],
+        "entry_phase": "explore",
+        "phases": [
+            {
+                "type": "phase",
+                "id": "explore",
+                "title": "Explore",
+                "kind": "explore",
+                "objective": "Read the project.",
+                "outputs": ["A project inventory."],
+                "expected_facts": ["The relevant project constraints are identified."],
+                "timeout_seconds": 60,
+                "on": {"done": "implement"},
+            },
+            {
+                "type": "phase",
+                "id": "implement",
+                "title": "Implement",
+                "kind": "implement",
+                "objective": "Make the change.",
+                "outputs": ["The requested source change."],
+                "expected_facts": ["The requested behavior is implemented."],
+                "timeout_seconds": 120,
+                "on": {"done": "$complete"},
+            },
+        ],
     }
 
 
 class PlanIRTests(unittest.TestCase):
     def test_rejects_a_phase_without_completion_contract(self) -> None:
-        response = ready_response()
-        del response["workflow"]["phases"][0]["expected_facts"]
+        response = workflow()
+        del response["phases"][0]["expected_facts"]
         with self.assertRaisesRegex(ValidationError, "phase fields"):
-            validate_planning_response(response)
+            validate_workflow(response)
 
     def test_local_validator_rejects_an_empty_outcome_map(self) -> None:
-        response = ready_response()
-        response["workflow"]["phases"][0]["on"] = {}
+        response = workflow()
+        response["phases"][0]["on"] = {}
         with self.assertRaisesRegex(ValidationError, "on must be a non-empty object"):
-            validate_planning_response(response)
+            validate_workflow(response)
 
     def test_transport_schema_leaves_node_semantics_to_the_local_validator(self) -> None:
         schema = json.loads(
@@ -75,16 +70,20 @@ class PlanIRTests(unittest.TestCase):
         )
 
     def test_accepts_a_complete_single_chain(self) -> None:
-        self.assertEqual(validate_planning_response(ready_response())["status"], "ready")
+        self.assertEqual(validate_workflow(workflow())["title"], "Example")
 
-    def test_accepts_a_cycle(self) -> None:
-        response = ready_response()
-        response["workflow"]["phases"][1]["on"] = {"done": "explore", "needs_fix": "$complete"}
+    def test_accepts_a_ready_status_without_a_duplicate_workflow(self) -> None:
+        response = {"status": "ready", "summary": "The plan package is ready.", "questions": []}
         self.assertEqual(validate_planning_response(response)["status"], "ready")
 
+    def test_accepts_a_cycle(self) -> None:
+        response = workflow()
+        response["phases"][1]["on"] = {"done": "explore", "needs_fix": "$complete"}
+        self.assertEqual(validate_workflow(response)["title"], "Example")
+
     def test_rejects_an_unreachable_phase(self) -> None:
-        response = ready_response()
-        response["workflow"]["phases"].append(
+        response = workflow()
+        response["phases"].append(
             {
                 "type": "phase",
                 "id": "review",
@@ -98,13 +97,12 @@ class PlanIRTests(unittest.TestCase):
             }
         )
         with self.assertRaisesRegex(ValidationError, "unreachable"):
-            validate_planning_response(response)
+            validate_workflow(response)
 
     def test_accepts_focused_planning_questions(self) -> None:
         response = {
             "status": "needs_input",
             "summary": "A material product choice is unresolved.",
-            "workflow": None,
             "questions": [
                 {
                     "id": "auth-mode",
@@ -116,9 +114,9 @@ class PlanIRTests(unittest.TestCase):
         self.assertEqual(validate_planning_response(response)["status"], "needs_input")
 
     def test_accepts_hierarchical_conditional_navigation(self) -> None:
-        response = ready_response()
-        response["workflow"]["entry_phase"] = "major"
-        response["workflow"]["phases"] = [
+        response = workflow()
+        response["entry_phase"] = "major"
+        response["phases"] = [
             {
                 "type": "scope",
                 "id": "major",
@@ -142,7 +140,7 @@ class PlanIRTests(unittest.TestCase):
                                     "done": "$complete",
                                     "invalid": [
                                         {
-                                            "when": "($major.minor < 3 and $workflow.minor < 8) or $try_minor.retry == 0",
+                                            "when": "($major.minor < 3 and $workflow.minor < 8)",
                                             "target": "minor",
                                         },
                                         {"target": "$complete"},
@@ -154,15 +152,15 @@ class PlanIRTests(unittest.TestCase):
                 ],
             }
         ]
-        self.assertEqual(validate_planning_response(response)["status"], "ready")
+        self.assertEqual(validate_workflow(response)["title"], "Example")
 
     def test_rejects_unsafe_or_unknown_condition_syntax(self) -> None:
-        response = ready_response()
-        response["workflow"]["phases"][0]["on"] = {
+        response = workflow()
+        response["phases"][0]["on"] = {
             "done": [
                 {"when": "$explore.retry + 1 < 3", "target": "implement"},
                 {"target": "$complete"},
             ]
         }
         with self.assertRaisesRegex(ValidationError, "unsupported syntax"):
-            validate_planning_response(response)
+            validate_workflow(response)

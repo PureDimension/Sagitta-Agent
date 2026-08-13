@@ -1,4 +1,4 @@
-"""A minimal Codex CLI adapter for read-only planning sessions."""
+"""A minimal Codex CLI adapter for planning sessions with a contract package."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ class CodexPlanner:
     def __init__(self, run_command: RunCommand = subprocess.run) -> None:
         self.run_command = run_command
 
-    def start(self, workspace: Path, prompt: str) -> CodexResult:
+    def start(self, workspace: Path, prompt: str, plan_directory: Path) -> CodexResult:
         command_prefix: list[str] = [
             "codex",
             "exec",
@@ -46,11 +46,13 @@ class CodexPlanner:
             "-C",
             str(workspace),
             "-s",
-            "read-only",
+            "workspace-write",
+            "--add-dir",
+            str(plan_directory),
         ]
         return self._invoke(command_prefix, prompt, workspace=workspace)
 
-    def resume(self, workspace: Path, session_id: str, prompt: str) -> CodexResult:
+    def resume(self, workspace: Path, session_id: str, prompt: str, plan_directory: Path) -> CodexResult:
         command_prefix = [
             "codex",
             "exec",
@@ -60,6 +62,12 @@ class CodexPlanner:
             self.model,
             "-c",
             f'model_reasoning_effort="{self.reasoning_effort}"',
+            "-C",
+            str(workspace),
+            "-s",
+            "workspace-write",
+            "--add-dir",
+            str(plan_directory),
         ]
         return self._invoke(
             command_prefix,

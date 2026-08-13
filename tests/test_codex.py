@@ -14,7 +14,7 @@ def transport_response(response: dict) -> str:
 
 
 class CodexPlannerTests(unittest.TestCase):
-    def test_start_uses_terra_high_and_read_only_workspace(self) -> None:
+    def test_start_uses_terra_high_and_writable_contract_package(self) -> None:
         captured: list[str] = []
         captured_cwd: Path | None = None
 
@@ -28,7 +28,6 @@ class CodexPlannerTests(unittest.TestCase):
                     {
                         "status": "needs_input",
                         "summary": "Need a decision.",
-                        "workflow": None,
                         "questions": [
                             {"id": "mode", "question": "Which mode?", "reason": "It changes scope."}
                         ],
@@ -39,12 +38,17 @@ class CodexPlannerTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0, stdout='{"thread_id":"thread-1"}\n', stderr="")
 
         with TemporaryDirectory() as directory:
-            result = CodexPlanner(run_command=fake_run).start(Path(directory), "Plan this task")
+            workspace = Path(directory)
+            plan_directory = workspace / "plan"
+            plan_directory.mkdir()
+            result = CodexPlanner(run_command=fake_run).start(workspace, "Plan this task", plan_directory)
 
         self.assertEqual(result.session_id, "thread-1")
         self.assertIn("gpt-5.6-terra", captured)
         self.assertIn('model_reasoning_effort="high"', captured)
-        self.assertIn("read-only", captured)
+        self.assertIn("workspace-write", captured)
+        self.assertIn("--add-dir", captured)
+        self.assertIn(str(plan_directory), captured)
         self.assertIn("--output-schema", captured)
         self.assertNotIn("-a", captured)
         self.assertEqual(captured_cwd, Path(directory))
@@ -59,14 +63,16 @@ class CodexPlannerTests(unittest.TestCase):
             captured_cwd = kwargs["cwd"]
             output_path = Path(command[command.index("--output-last-message") + 1])
             output_path.write_text(
-                transport_response({"status": "needs_input", "summary": "Need input.", "workflow": None, "questions": [{"id": "mode", "question": "Which mode?", "reason": "It matters."}]}),
+                transport_response({"status": "needs_input", "summary": "Need input.", "questions": [{"id": "mode", "question": "Which mode?", "reason": "It matters."}]}),
                 encoding="utf-8",
             )
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
         with TemporaryDirectory() as directory:
             workspace = Path(directory)
-            result = CodexPlanner(run_command=fake_run).resume(workspace, "thread-1", "Continue")
+            plan_directory = workspace / "plan"
+            plan_directory.mkdir()
+            result = CodexPlanner(run_command=fake_run).resume(workspace, "thread-1", "Continue", plan_directory)
 
         self.assertEqual(result.session_id, "thread-1")
         self.assertEqual(captured_cwd, workspace)
@@ -80,7 +86,10 @@ class CodexPlannerTests(unittest.TestCase):
 
         with TemporaryDirectory() as directory:
             with self.assertRaisesRegex(CodexError, "transport envelope"):
-                CodexPlanner(run_command=fake_run).start(Path(directory), "Plan this task")
+                workspace = Path(directory)
+                plan_directory = workspace / "plan"
+                plan_directory.mkdir()
+                CodexPlanner(run_command=fake_run).start(workspace, "Plan this task", plan_directory)
 
     def test_prefers_a_structured_codex_error_over_stderr_warnings(self) -> None:
         def fake_run(command, **_kwargs):
@@ -93,4 +102,7 @@ class CodexPlannerTests(unittest.TestCase):
 
         with TemporaryDirectory() as directory:
             with self.assertRaisesRegex(CodexError, "structured provider failure"):
-                CodexPlanner(run_command=fake_run).start(Path(directory), "Plan this task")
+                workspace = Path(directory)
+                plan_directory = workspace / "plan"
+                plan_directory.mkdir()
+                CodexPlanner(run_command=fake_run).start(workspace, "Plan this task", plan_directory)

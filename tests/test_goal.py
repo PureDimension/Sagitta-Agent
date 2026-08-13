@@ -11,6 +11,13 @@ from sagitta.cli import main
 from sagitta.goal import GoalCompilationError, GoalService, compile_goal
 
 
+def write_contracts(runs: PlanningRunStore, run_id: str) -> None:
+    directory = runs.prepare_contract_package(run_id)
+    (directory / "TASK_CONTRACT.md").write_text("# Task contract\n", encoding="utf-8")
+    for phase_id in ("implement", "test"):
+        (directory / "phases" / f"{phase_id}.md").write_text(f"# {phase_id}\n", encoding="utf-8")
+
+
 def workflow() -> dict:
     return {
         "title": "Example workflow",
@@ -50,7 +57,13 @@ def workflow() -> dict:
                         "outputs": ["A test log."],
                         "expected_facts": ["The test command exits successfully."],
                         "timeout_seconds": 60,
-                        "on": {"passed": "$complete", "needs_fix": "implement"},
+                        "on": {
+                            "passed": "$complete",
+                            "needs_fix": [
+                                {"when": "$major.implement <= 1 and $workflow.test < 3", "target": "implement"},
+                                {"target": "$complete"},
+                            ],
+                        },
                     },
                 ],
             }
@@ -64,15 +77,26 @@ class GoalCompilerTests(unittest.TestCase):
             workflow(),
             "Add the bounded change.",
             [{"id": "scope", "question": "Which scope?", "answer": "Only the API."}],
+            Path("/managed-plan"),
         )
 
         self.assertIn("Add the bounded change.", goal)
         self.assertIn("Answer: Only the API.", goal)
         self.assertIn("Scope `major`", goal)
         self.assertIn("Phase `implement`", goal)
-        self.assertIn("Report `blocked`", goal)
-        self.assertIn("when `$implement.retry < 2` → `implement`", goal)
-        self.assertIn("otherwise → `$complete`", goal)
+        self.assertIn("If you observe `blocked`", goal)
+        self.assertIn("phase `implement` has directly retried itself fewer than 2 times", goal)
+        self.assertIn("otherwise, finish the workflow", goal)
+        self.assertIn("this run of scope `major` has entered its direct child `implement` at most 1 times", goal)
+        self.assertIn("the workflow has entered `test` fewer than 3 times", goal)
+        self.assertNotIn("$implement.retry", goal)
+        self.assertNotIn("$complete", goal)
+        self.assertNotIn("$major.implement", goal)
+        self.assertNotIn("$workflow.test", goal)
+        self.assertNotIn("$", goal)
+        self.assertNotIn('{"when"', goal)
+        self.assertIn("/managed-plan/TASK_CONTRACT.md", goal)
+        self.assertIn("/managed-plan/phases/implement.md", goal)
         self.assertIn(".sagitta-goal-state.json", goal)
 
     def test_exports_only_a_ready_plan_to_its_plan_directory(self) -> None:
@@ -82,6 +106,7 @@ class GoalCompilerTests(unittest.TestCase):
             runs = PlanningRunStore(root)
             runs.create({"id": run_id, "intent": "Add the bounded change.", "qa": [], "status": "ready"})
             runs.save_ir(run_id, workflow())
+            write_contracts(runs, run_id)
 
             path, goal = GoalService(runs).export(run_id)
 
@@ -99,6 +124,17 @@ class GoalCompilerTests(unittest.TestCase):
             with self.assertRaisesRegex(GoalCompilationError, "only a ready"):
                 GoalService(runs).export(run_id)
 
+    def test_rejects_a_ready_plan_without_its_contract_package(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            run_id = "12345678-1234-1234-1234-123456789abc"
+            runs = PlanningRunStore(root)
+            runs.create({"id": run_id, "intent": "Add the bounded change.", "qa": [], "status": "ready"})
+            runs.save_ir(run_id, workflow())
+
+            with self.assertRaisesRegex(GoalCompilationError, "missing required non-empty contracts"):
+                GoalService(runs).export(run_id)
+
     def test_goal_command_exports_and_prints_the_paste_ready_goal(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -106,6 +142,7 @@ class GoalCompilerTests(unittest.TestCase):
             runs = PlanningRunStore(root)
             runs.create({"id": run_id, "intent": "Add the bounded change.", "qa": [], "status": "ready"})
             runs.save_ir(run_id, workflow())
+            write_contracts(runs, run_id)
             stdout = StringIO()
 
             with redirect_stdout(stdout):

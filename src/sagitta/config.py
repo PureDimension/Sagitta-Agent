@@ -113,6 +113,20 @@ class PlanningRunStore:
             raise StorageError(f"planning run already exists: {run_id}") from error
         _write_json(directory / "state.json", record)
 
+    def prepare_contract_package(self, run_id: str) -> Path:
+        """Create the planner-writable contract locations for one planning run."""
+        directory = self.directory_for(run_id)
+        if not directory.is_dir():
+            raise StorageError(f"planning run is unavailable: {run_id}")
+        (directory / "phases").mkdir(exist_ok=True)
+        return directory
+
+    def task_contract_path(self, run_id: str) -> Path:
+        return self.directory_for(run_id) / "TASK_CONTRACT.md"
+
+    def phase_contract_path(self, run_id: str, phase_id: str) -> Path:
+        return self.directory_for(run_id) / "phases" / f"{phase_id}.md"
+
     def save(self, record: dict[str, Any]) -> None:
         run_id = record.get("id")
         if not isinstance(run_id, str):

@@ -73,7 +73,7 @@ The core loop: **Natural Language → Workflow Compilation → Boundary Confirma
 
 The Task Engine is the core differentiator. It wraps coding agents (Claude Code, Codex, DeepSeek) in a state-machine orchestration layer:
 
-1. **Planner**: Converts natural language requirements into a structured workflow. The current planning core uses Codex read-only workspace inspection, persisted user decisions over one resumed session, a canonical few-shot prompt, local IR validation, and one structural repair attempt.
+1. **Planner**: Converts natural language requirements into a structured workflow. The current planning core gives Codex workspace-write access to create a per-plan contract package and run short planning checks in the project, persists user decisions over one resumed session, uses a canonical few-shot prompt, locally validates the planner-written `ir.json`, and permits one structural repair attempt. Planning must not begin delivery work or edit source.
 
 2. **Future State Machine**: Phase-level execution will use ARIS-style gating:
    - `pending → running → done → accepted`
@@ -147,9 +147,9 @@ What Sagitta adds that ARIS lacks:
 
 ### 1. Implemented: Planning Core
 - `sagitta init`, `plan`, `answer`, and `show`
-- Read-only Codex workspace inspection
-- Natural language → validated Plan IR
-- Persistent Q&A, raw events, planning state, and ready IR
+- Codex workspace inspection plus a planner-written Plan Package
+- Natural language → validated Plan Package and Plan IR
+- Persistent Q&A, raw events, planning state, contracts, and ready `ir.json`
 
 ### 2. Temporary Execution Bridge
 - `sagitta goal <plan-id>` exports a paste-ready Codex App Goal for initial use
@@ -181,6 +181,7 @@ This file is the canonical design document for Sagitta-Agent. When contributing:
 - The Task Engine follows ARIS's acceptance-gate pattern (`acceptance-gate.md`): an executor can DRIVE but cannot silently change or acquit its own acceptance policy
 - The Persona Layer has high agency and may push back — this is by design, not a bug
 - Planning sessions persist at `~/.sagitta/plans/<plan-id>/`; future execution runs will persist separately at `.sagitta/runs/<run-id>.json`
+- A ready planning package contains `TASK_CONTRACT.md`, one phase contract at `phases/<phase-id>.md` for every IR phase, and planner-written `ir.json`; `ir.json` is the single workflow source, while the structured planner response carries only status, summary, and questions
 - A Plan IR phase has `outputs` and `expected_facts` as business contracts; runtime state, worktrees, counters, checkpoints, and permissions are not workflow phases
 - A minimal workflow language/IR is a Phase 1 design contract; keep it small, inspectable, AI-generable, and statically validatable
 - Execution units (Claude Code, Codex, model APIs) are pluggable adapters behind the bridge layer; the orchestration layer never depends on any specific one

@@ -23,14 +23,14 @@ def _service(args: argparse.Namespace) -> PlanningService:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Sagitta Plan IR and manual Goal export MVP")
+    parser = argparse.ArgumentParser(description="Sagitta Plan Package/IR and manual Goal export MVP")
     parser.add_argument("--home", help="override the local Sagitta state directory")
     subcommands = parser.add_subparsers(dest="command", required=True)
 
     init = subcommands.add_parser("init", help="configure the planning workspace")
     init.add_argument("--workspace", required=True, help="existing directory Codex may inspect")
 
-    plan = subcommands.add_parser("plan", help="ask Codex to inspect the workspace and create a Plan IR")
+    plan = subcommands.add_parser("plan", help="ask Codex to inspect the workspace and create a Plan Package and IR")
     plan.add_argument("intent", help="natural-language development request")
 
     answer = subcommands.add_parser("answer", help="answer one Codex planning question and resume planning")

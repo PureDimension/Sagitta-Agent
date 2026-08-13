@@ -11,7 +11,7 @@ from typing import Any
 
 from .codex import CodexPlanner
 from .config import ConfigStore, PlanningRunStore, StorageError
-from .ir import ValidationError, validate_planning_response
+from .ir import ValidationError, validate_planning_response, validate_workflow
 
 
 class PlanningError(RuntimeError):
@@ -59,8 +59,9 @@ class PlanningService:
             "codex_call_count": 0,
         }
         self.runs.create(record)
+        package_directory = self.runs.prepare_contract_package(run_id)
         self.runs.append_event(run_id, {"at": _now(), "type": "planning_started"})
-        result = self.codex.start(workspace, self._initial_prompt(intent))
+        result = self.codex.start(workspace, self._initial_prompt(intent, package_directory), package_directory)
         return self._apply_codex_result(record, result, sequence=0, label="initial")
 
     def answer(self, run_id: str, question_id: str, answer: str) -> dict[str, Any]:
@@ -95,7 +96,8 @@ class PlanningService:
         result = self.codex.resume(
             workspace,
             session_id,
-            self._answer_prompt(question_id, answer),
+            self._answer_prompt(question_id, answer, self.runs.directory_for(run_id)),
+            self.runs.directory_for(run_id),
         )
         record["qa"] = qa
         return self._apply_codex_result(
@@ -116,6 +118,9 @@ class PlanningService:
         run_id = record["id"]
         try:
             response = self._validated_response(result.response)
+            if response["status"] == "ready":
+                workflow = self._load_written_workflow(run_id)
+                self._validate_contract_package(run_id, workflow)
         except PlanningError as error:
             return self._repair_invalid_ir(
                 record,
@@ -162,7 +167,6 @@ class PlanningService:
                     {"at": _now(), "question_id": question["id"], "type": "question_asked"},
                 )
         else:
-            self.runs.save_ir(run_id, response["workflow"])
             self.runs.append_event(run_id, {"at": _now(), "type": "planning_ready"})
         self.runs.save(record)
         return record
@@ -215,7 +219,8 @@ class PlanningService:
         repaired = self.codex.resume(
             workspace,
             result.session_id,
-            self._repair_prompt(str(error)),
+            self._repair_prompt(str(error), self.runs.directory_for(run_id)),
+            self.runs.directory_for(run_id),
         )
         return self._apply_codex_result(
             record,
@@ -236,24 +241,61 @@ class PlanningService:
     def _planner_template() -> str:
         return resources.files("sagitta.prompts").joinpath("planner.md").read_text(encoding="utf-8")
 
-    def _initial_prompt(self, intent: str) -> str:
-        return self._planner_template().replace("{{TASK}}", intent)
+    def _initial_prompt(self, intent: str, package_directory: Path) -> str:
+        return (
+            self._planner_template()
+            .replace("{{TASK}}", intent)
+            .replace("{{PLAN_DIRECTORY}}", str(package_directory))
+        )
 
-    def _answer_prompt(self, question_id: str, answer: str) -> str:
+    def _answer_prompt(self, question_id: str, answer: str, package_directory: Path) -> str:
         return (
             "Continue the same planning task. The user has answered the pending planning question "
             f"`{question_id}`:\n\n{answer}\n\n"
-            "Inspect the workspace again if useful, then return a fresh response that follows the output contract."
+            "You may inspect the workspace and revise the planning contract package as needed. "
+            f"Its only writable planning location is:\n{package_directory}\n\n"
+            "Then return a fresh response that follows the output contract."
         )
 
+    def _validate_contract_package(self, run_id: str, workflow: dict[str, Any]) -> None:
+        expected = [self.runs.task_contract_path(run_id)]
+        expected.extend(self.runs.phase_contract_path(run_id, phase_id) for phase_id in _phase_ids(workflow["phases"]))
+        missing = [str(path) for path in expected if not path.is_file() or not path.read_text(encoding="utf-8").strip()]
+        if missing:
+            raise PlanningError("Codex did not write the required non-empty planning contracts: " + ", ".join(missing))
+
+    def _load_written_workflow(self, run_id: str) -> dict[str, Any]:
+        path = self.runs.directory_for(run_id) / "ir.json"
+        try:
+            workflow = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError as error:
+            raise PlanningError(f"Codex did not write the required IR file: {path}") from error
+        except json.JSONDecodeError as error:
+            raise PlanningError(f"Codex wrote invalid JSON to {path}: {error}") from error
+        try:
+            return validate_workflow(workflow)
+        except ValidationError as error:
+            raise PlanningError(f"Codex wrote an invalid workflow to {path}: {error}") from error
+
     @staticmethod
-    def _repair_prompt(validation_error: str) -> str:
+    def _repair_prompt(validation_error: str, package_directory: Path) -> str:
         return (
             "Your previous final JSON did not satisfy Sagitta's local workflow IR validator. "
-            "Keep the same task understanding and planning intent, but return a corrected replacement JSON object only. "
+            "Keep the same task understanding and planning intent, correct any affected planning contracts in this directory, "
+            f"then return a corrected replacement JSON object only:\n{package_directory}\n\n"
             "Do not explain the correction or ask a new question unless the prior response already required user input.\n\n"
             f"Validation error:\n{validation_error}"
         )
+
+
+def _phase_ids(nodes: list[dict[str, Any]]) -> list[str]:
+    phase_ids: list[str] = []
+    for node in nodes:
+        if node["type"] == "phase":
+            phase_ids.append(node["id"])
+        else:
+            phase_ids.extend(_phase_ids(node["phases"]))
+    return phase_ids
 
 
 def record_for_display(record: dict[str, Any]) -> str:

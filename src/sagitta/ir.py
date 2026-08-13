@@ -82,12 +82,10 @@ def validate_planning_response(response: Any) -> dict[str, Any]:
 
     status = response.get("status")
     _nonempty_string(response.get("summary"), "summary")
-    if set(response) != {"status", "summary", "questions", "workflow"}:
-        raise ValidationError("planning response must contain status, summary, questions, and workflow")
+    if set(response) != {"status", "summary", "questions"}:
+        raise ValidationError("planning response must contain status, summary, and questions")
 
     if status == "needs_input":
-        if response.get("workflow") is not None:
-            raise ValidationError("needs_input requires workflow to be null")
         questions = response.get("questions")
         if not isinstance(questions, list) or not questions:
             raise ValidationError("needs_input requires at least one question")
@@ -106,7 +104,6 @@ def validate_planning_response(response: Any) -> dict[str, Any]:
     if status == "ready":
         if response.get("questions") != []:
             raise ValidationError("ready requires questions to be an empty array")
-        validate_workflow(response.get("workflow"))
         return response
 
     raise ValidationError("planning response status must be needs_input or ready")

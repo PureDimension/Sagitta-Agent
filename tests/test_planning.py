@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+from importlib import resources
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from sagitta.codex import CodexResult
 from sagitta.config import ConfigStore, PlanningRunStore
-from sagitta.planning import PlanningService
+from sagitta.planning import PlanningError, PlanningService
+
+
+def write_contracts(plan_directory: Path, phase_ids: list[str], workflow: dict) -> None:
+    (plan_directory / "TASK_CONTRACT.md").write_text("# Task contract\n", encoding="utf-8")
+    for phase_id in phase_ids:
+        (plan_directory / "phases" / f"{phase_id}.md").write_text(f"# {phase_id}\n", encoding="utf-8")
+    (plan_directory / "ir.json").write_text(json.dumps(workflow), encoding="utf-8")
 
 
 class FakeCodex:
@@ -15,7 +24,7 @@ class FakeCodex:
         self.resume_prompt = ""
         self.resume_workspace: Path | None = None
 
-    def start(self, _workspace: Path, prompt: str) -> CodexResult:
+    def start(self, _workspace: Path, prompt: str, _plan_directory: Path) -> CodexResult:
         self.start_prompt = prompt
         return CodexResult(
             session_id="thread-1",
@@ -24,16 +33,36 @@ class FakeCodex:
             response={
                 "status": "needs_input",
                 "summary": "Need one choice.",
-                "workflow": None,
                 "questions": [
                     {"id": "mode", "question": "Which mode?", "reason": "It changes scope."}
                 ],
             },
         )
 
-    def resume(self, workspace: Path, _session_id: str, prompt: str) -> CodexResult:
+    def resume(self, workspace: Path, _session_id: str, prompt: str, plan_directory: Path) -> CodexResult:
         self.resume_prompt = prompt
         self.resume_workspace = workspace
+        workflow = {
+            "title": "Example",
+            "goal": "Do the work.",
+            "project_summary": "A project.",
+            "assumptions": [],
+            "entry_phase": "implement",
+            "phases": [
+                {
+                    "type": "phase",
+                    "id": "implement",
+                    "title": "Implement",
+                    "kind": "implement",
+                    "objective": "Make the change.",
+                    "outputs": ["The requested change."],
+                    "expected_facts": ["The change is present."],
+                    "timeout_seconds": 60,
+                    "on": {"done": "$complete"},
+                }
+            ],
+        }
+        write_contracts(plan_directory, ["implement"], workflow)
         return CodexResult(
             session_id="thread-1",
             stdout="",
@@ -42,26 +71,6 @@ class FakeCodex:
                 "status": "ready",
                 "summary": "Ready.",
                 "questions": [],
-                "workflow": {
-                    "title": "Example",
-                    "goal": "Do the work.",
-                    "project_summary": "A project.",
-                    "assumptions": [],
-                    "entry_phase": "implement",
-                    "phases": [
-                        {
-                            "type": "phase",
-                            "id": "implement",
-                            "title": "Implement",
-                            "kind": "implement",
-                            "objective": "Make the change.",
-                            "outputs": ["The requested change."],
-                            "expected_facts": ["The change is present."],
-                            "timeout_seconds": 60,
-                            "on": {"done": "$complete"},
-                        }
-                    ],
-                },
             },
         )
 
@@ -70,7 +79,28 @@ class FakeCodexWithInvalidIR:
     def __init__(self) -> None:
         self.resume_prompts: list[str] = []
 
-    def start(self, _workspace: Path, _prompt: str) -> CodexResult:
+    def start(self, _workspace: Path, _prompt: str, plan_directory: Path) -> CodexResult:
+        invalid_workflow = {
+            "title": "Invalid",
+            "goal": "Repair this.",
+            "project_summary": "A project.",
+            "assumptions": [],
+            "entry_phase": "implement",
+            "phases": [
+                {
+                    "type": "phase",
+                    "id": "implement",
+                    "title": "Implement",
+                    "kind": "implement",
+                    "objective": "Make the change.",
+                    "outputs": ["The attempted change."],
+                    "expected_facts": ["The response intentionally contains an invalid target."],
+                    "timeout_seconds": 60,
+                    "on": {"done": "missing"},
+                }
+            ],
+        }
+        write_contracts(plan_directory, ["implement"], invalid_workflow)
         return CodexResult(
             session_id="thread-1",
             stdout="",
@@ -79,31 +109,32 @@ class FakeCodexWithInvalidIR:
                 "status": "ready",
                 "summary": "This response has an invalid phase.",
                 "questions": [],
-                "workflow": {
-                    "title": "Invalid",
-                    "goal": "Repair this.",
-                    "project_summary": "A project.",
-                    "assumptions": [],
-                    "entry_phase": "implement",
-                    "phases": [
-                        {
-                            "type": "phase",
-                            "id": "implement",
-                            "title": "Implement",
-                            "kind": "implement",
-                            "objective": "Make the change.",
-                            "outputs": ["The attempted change."],
-                            "expected_facts": ["The response intentionally contains an invalid target."],
-                            "timeout_seconds": 60,
-                            "on": {"done": "missing"},
-                        }
-                    ],
-                },
             },
         )
 
-    def resume(self, _workspace: Path, _session_id: str, prompt: str) -> CodexResult:
+    def resume(self, _workspace: Path, _session_id: str, prompt: str, plan_directory: Path) -> CodexResult:
         self.resume_prompts.append(prompt)
+        workflow = {
+            "title": "Repaired",
+            "goal": "Do the work.",
+            "project_summary": "A project.",
+            "assumptions": [],
+            "entry_phase": "implement",
+            "phases": [
+                {
+                    "type": "phase",
+                    "id": "implement",
+                    "title": "Implement",
+                    "kind": "implement",
+                    "objective": "Make the change.",
+                    "outputs": ["The corrected change."],
+                    "expected_facts": ["The target is valid."],
+                    "timeout_seconds": 60,
+                    "on": {"done": "$complete"},
+                }
+            ],
+        }
+        write_contracts(plan_directory, ["implement"], workflow)
         return CodexResult(
             session_id="thread-1",
             stdout="",
@@ -112,31 +143,92 @@ class FakeCodexWithInvalidIR:
                 "status": "ready",
                 "summary": "Repaired.",
                 "questions": [],
-                "workflow": {
-                    "title": "Repaired",
-                    "goal": "Do the work.",
-                    "project_summary": "A project.",
-                    "assumptions": [],
-                    "entry_phase": "implement",
-                    "phases": [
-                        {
-                            "type": "phase",
-                            "id": "implement",
-                            "title": "Implement",
-                            "kind": "implement",
-                            "objective": "Make the change.",
-                            "outputs": ["The corrected change."],
-                            "expected_facts": ["The target is valid."],
-                            "timeout_seconds": 60,
-                            "on": {"done": "$complete"},
-                        }
-                    ],
-                },
             },
         )
 
 
 class PlanningServiceTests(unittest.TestCase):
+    def test_planner_prompt_makes_retry_direct_self_calls_only(self) -> None:
+        prompt = resources.files("sagitta.prompts").joinpath("planner.md").read_text(encoding="utf-8")
+
+        self.assertIn("counts only **direct self-retries**", prompt)
+        self.assertIn("never use `$verify_change.retry`", prompt)
+        self.assertIn('"when": "$workflow.verify_change < 2"', prompt)
+        self.assertNotIn('"when": "$verify_change.retry < 2"', prompt)
+
+    def test_ready_plan_requires_a_global_and_per_phase_contract(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            config = ConfigStore(root)
+            config.save_workspace(workspace)
+            runs = PlanningRunStore(root)
+            run_id = "12345678-1234-1234-1234-123456789abc"
+            runs.create({"id": run_id})
+            runs.prepare_contract_package(run_id)
+            service = PlanningService(config, runs, FakeCodex())  # type: ignore[arg-type]
+            workflow = {
+                "title": "Example",
+                "goal": "Do the work.",
+                "project_summary": "A project.",
+                "assumptions": [],
+                "entry_phase": "implement",
+                "phases": [
+                    {
+                        "type": "phase",
+                        "id": "implement",
+                        "title": "Implement",
+                        "kind": "implement",
+                        "objective": "Make the change.",
+                        "outputs": ["The change."],
+                        "expected_facts": ["The change exists."],
+                        "timeout_seconds": 60,
+                        "on": {"done": "$complete"},
+                    }
+                ],
+            }
+
+            with self.assertRaisesRegex(PlanningError, "TASK_CONTRACT.md"):
+                service._validate_contract_package(run_id, workflow)
+
+    def test_ready_plan_requires_a_valid_written_ir(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            config = ConfigStore(root)
+            config.save_workspace(workspace)
+            runs = PlanningRunStore(root)
+            run_id = "12345678-1234-1234-1234-123456789abc"
+            runs.create({"id": run_id})
+            package = runs.prepare_contract_package(run_id)
+            workflow = {
+                "title": "Example",
+                "goal": "Do the work.",
+                "project_summary": "A project.",
+                "assumptions": [],
+                "entry_phase": "implement",
+                "phases": [
+                    {
+                        "type": "phase",
+                        "id": "implement",
+                        "title": "Implement",
+                        "kind": "implement",
+                        "objective": "Make the change.",
+                        "outputs": ["The change."],
+                        "expected_facts": ["The change exists."],
+                        "timeout_seconds": 60,
+                        "on": {"done": "$complete"},
+                    }
+                ],
+            }
+            write_contracts(package, ["implement"], {"title": "different"})
+            service = PlanningService(config, runs, FakeCodex())  # type: ignore[arg-type]
+
+            with self.assertRaisesRegex(PlanningError, "workflow fields"):
+                service._load_written_workflow(run_id)
+
     def test_answer_is_saved_and_sent_when_resuming_the_same_session(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
