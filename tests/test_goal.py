@@ -14,8 +14,19 @@ from sagitta.goal import GoalCompilationError, GoalService, compile_goal
 def write_contracts(runs: PlanningRunStore, run_id: str) -> None:
     directory = runs.prepare_contract_package(run_id)
     (directory / "TASK_CONTRACT.md").write_text("# Task contract\n", encoding="utf-8")
+    (directory / "PRELAUNCH_REVIEW.md").write_text(
+        "# Pre-launch Review\n\nVerdict: `pass`\n",
+        encoding="utf-8",
+    )
     for phase_id in ("implement", "test"):
         (directory / "phases" / f"{phase_id}.md").write_text(f"# {phase_id}\n", encoding="utf-8")
+
+
+def freeze_reviewed_package(runs: PlanningRunStore, run_id: str) -> None:
+    record = runs.load(run_id)
+    record["reviewed_package_hashes"] = runs.plan_package_hashes(run_id)
+    record["prelaunch_review_sha256"] = runs.file_sha256(runs.prelaunch_review_path(run_id))
+    runs.save(record)
 
 
 def workflow() -> dict:
@@ -96,17 +107,24 @@ class GoalCompilerTests(unittest.TestCase):
         self.assertNotIn("$", goal)
         self.assertNotIn('{"when"', goal)
         self.assertIn("/managed-plan/TASK_CONTRACT.md", goal)
+        self.assertIn("/managed-plan/PRELAUNCH_REVIEW.md", goal)
         self.assertIn("/managed-plan/phases/implement.md", goal)
         self.assertIn(".sagitta-goal-state.json", goal)
+        self.assertIn(".sagitta-goal/RUN_LEDGER.jsonl", goal)
+        self.assertIn(".sagitta-goal/CHECKPOINT.md", goal)
+        self.assertIn("Select an outcome only when its complete condition is evidenced", goal)
+        self.assertIn("ready_for_human_audit", goal)
+        self.assertIn("Do not write `delivery_complete`", goal)
 
     def test_exports_only_a_ready_plan_to_its_plan_directory(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             run_id = "12345678-1234-1234-1234-123456789abc"
             runs = PlanningRunStore(root)
-            runs.create({"id": run_id, "intent": "Add the bounded change.", "qa": [], "status": "ready"})
+            runs.create({"id": run_id, "intent": "Add the bounded change.", "qa": [], "status": "ready", "prelaunch_review": {"verdict": "pass"}})
             runs.save_ir(run_id, workflow())
             write_contracts(runs, run_id)
+            freeze_reviewed_package(runs, run_id)
 
             path, goal = GoalService(runs).export(run_id)
 
@@ -124,15 +142,39 @@ class GoalCompilerTests(unittest.TestCase):
             with self.assertRaisesRegex(GoalCompilationError, "only a ready"):
                 GoalService(runs).export(run_id)
 
-    def test_rejects_a_ready_plan_without_its_contract_package(self) -> None:
+    def test_rejects_a_ready_plan_without_a_passing_prelaunch_review(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             run_id = "12345678-1234-1234-1234-123456789abc"
             runs = PlanningRunStore(root)
             runs.create({"id": run_id, "intent": "Add the bounded change.", "qa": [], "status": "ready"})
+
+            with self.assertRaisesRegex(GoalCompilationError, "passing pre-launch review"):
+                GoalService(runs).export(run_id)
+
+    def test_rejects_a_ready_plan_without_its_contract_package(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            run_id = "12345678-1234-1234-1234-123456789abc"
+            runs = PlanningRunStore(root)
+            runs.create({"id": run_id, "intent": "Add the bounded change.", "qa": [], "status": "ready", "prelaunch_review": {"verdict": "pass"}})
             runs.save_ir(run_id, workflow())
 
             with self.assertRaisesRegex(GoalCompilationError, "missing required non-empty contracts"):
+                GoalService(runs).export(run_id)
+
+    def test_rejects_a_reviewed_plan_changed_after_review(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            run_id = "12345678-1234-1234-1234-123456789abc"
+            runs = PlanningRunStore(root)
+            runs.create({"id": run_id, "intent": "Add the bounded change.", "qa": [], "status": "ready", "prelaunch_review": {"verdict": "pass"}})
+            runs.save_ir(run_id, workflow())
+            write_contracts(runs, run_id)
+            freeze_reviewed_package(runs, run_id)
+            runs.task_contract_path(run_id).write_text("# Changed after review\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(GoalCompilationError, "no longer matches"):
                 GoalService(runs).export(run_id)
 
     def test_goal_command_exports_and_prints_the_paste_ready_goal(self) -> None:
@@ -140,9 +182,10 @@ class GoalCompilerTests(unittest.TestCase):
             root = Path(directory)
             run_id = "12345678-1234-1234-1234-123456789abc"
             runs = PlanningRunStore(root)
-            runs.create({"id": run_id, "intent": "Add the bounded change.", "qa": [], "status": "ready"})
+            runs.create({"id": run_id, "intent": "Add the bounded change.", "qa": [], "status": "ready", "prelaunch_review": {"verdict": "pass"}})
             runs.save_ir(run_id, workflow())
             write_contracts(runs, run_id)
+            freeze_reviewed_package(runs, run_id)
             stdout = StringIO()
 
             with redirect_stdout(stdout):

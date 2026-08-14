@@ -27,9 +27,9 @@ RunCommand = Callable[..., subprocess.CompletedProcess[str]]
 
 
 class CodexPlanner:
-    """Runs or resumes one persistent Codex planning session."""
+    """Runs a persistent planner plus fresh read-only package reviews."""
 
-    model = "gpt-5.6-terra"
+    model = "gpt-5.6-sol"
     reasoning_effort = "high"
 
     def __init__(self, run_command: RunCommand = subprocess.run) -> None:
@@ -76,16 +76,44 @@ class CodexPlanner:
             fallback_session_id=session_id,
         )
 
+    def review(self, workspace: Path, prompt: str, plan_directory: Path) -> CodexResult:
+        """Review a complete Plan Package in a fresh read-only Codex session."""
+        command_prefix = [
+            "codex",
+            "exec",
+            "-m",
+            self.model,
+            "-c",
+            f'model_reasoning_effort="{self.reasoning_effort}"',
+            "-C",
+            str(workspace),
+            "-s",
+            "read-only",
+            "--add-dir",
+            str(plan_directory),
+        ]
+        return self._invoke(
+            command_prefix,
+            prompt,
+            workspace=workspace,
+            schema_name="prelaunch_review_response.json",
+            envelope_key="review_response_json",
+            operation="pre-launch review",
+        )
+
     def _invoke(
         self,
         command_prefix: Sequence[str],
         prompt: str,
         workspace: Path,
         fallback_session_id: str | None = None,
+        schema_name: str = "planning_response.json",
+        envelope_key: str = "planning_response_json",
+        operation: str = "planning",
     ) -> CodexResult:
         with tempfile.TemporaryDirectory(prefix="sagitta-codex-") as directory:
             output_path = Path(directory) / "response.json"
-            schema_path = resources.files("sagitta.schemas").joinpath("planning_response.json")
+            schema_path = resources.files("sagitta.schemas").joinpath(schema_name)
             command = [
                 *command_prefix,
                 "--json",
@@ -104,23 +132,23 @@ class CodexPlanner:
             )
             if completed.returncode != 0:
                 detail = self._error_detail(completed.stdout, completed.stderr)
-                raise CodexError(f"Codex planning failed ({completed.returncode}): {detail}")
+                raise CodexError(f"Codex {operation} failed ({completed.returncode}): {detail}")
             try:
                 transport = json.loads(output_path.read_text(encoding="utf-8"))
             except FileNotFoundError as error:
                 raise CodexError("Codex did not write its final planning response") from error
             except json.JSONDecodeError as error:
-                raise CodexError(f"Codex final response is not JSON: {error}") from error
+                raise CodexError(f"Codex {operation} final response is not JSON: {error}") from error
             try:
-                response_json = transport["planning_response_json"]
+                response_json = transport[envelope_key]
                 if not isinstance(response_json, str):
-                    raise TypeError("planning_response_json is not a string")
+                    raise TypeError(f"{envelope_key} is not a string")
                 response = json.loads(response_json)
             except (KeyError, TypeError, json.JSONDecodeError) as error:
-                raise CodexError("Codex final response has an invalid planning transport envelope") from error
+                raise CodexError(f"Codex final response has an invalid {operation} transport envelope") from error
             session_id = self._find_session_id(completed.stdout) or fallback_session_id
             if not session_id:
-                raise CodexError("Codex did not expose a planning session id")
+                raise CodexError(f"Codex did not expose a {operation} session id")
             if not isinstance(response, dict):
                 raise CodexError("Codex final response must be a JSON object")
             return CodexResult(

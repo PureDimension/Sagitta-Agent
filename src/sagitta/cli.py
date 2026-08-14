@@ -30,7 +30,10 @@ def build_parser() -> argparse.ArgumentParser:
     init = subcommands.add_parser("init", help="configure the planning workspace")
     init.add_argument("--workspace", required=True, help="existing directory Codex may inspect")
 
-    plan = subcommands.add_parser("plan", help="ask Codex to inspect the workspace and create a Plan Package and IR")
+    plan = subcommands.add_parser(
+        "plan",
+        help="ask Codex to inspect, write, and pre-launch-review a Plan Package and IR",
+    )
     plan.add_argument("intent", help="natural-language development request")
 
     answer = subcommands.add_parser("answer", help="answer one Codex planning question and resume planning")
@@ -41,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     show = subcommands.add_parser("show", help="show a persisted planning run")
     show.add_argument("run_id")
 
-    goal = subcommands.add_parser("goal", help="export a ready Plan IR as a paste-ready Codex Goal")
+    goal = subcommands.add_parser("goal", help="export a reviewed Plan IR as a paste-ready Codex Goal")
     goal.add_argument("run_id")
     return parser
 

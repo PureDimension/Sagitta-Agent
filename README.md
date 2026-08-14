@@ -68,7 +68,7 @@ Execution units are **pluggable adapters** behind the bridge layer, not part of 
 │  │  └──────────┘  └──────────┘  └──────┘ │ │
 │  │                                        │ │
 │  │  ┌──────────────────────────────────┐  │ │
-│  │  │       Provider Router             │  │ │
+│  │  │    Future Provider Router          │  │ │
 │  │  │  Claude Code / Codex / DeepSeek  │  │ │
 │  │  └──────────────────────────────────┘  │ │
 │  └────────────────────────────────────────┘ │
@@ -84,7 +84,7 @@ The Task Engine is one of Sagitta's two cores. It wraps coding agents (Claude Co
 
 1. **Planner** — converts natural language requirements into a structured workflow plan
 2. **Future State Machine** — phase-level execution will use ARIS-style gating: `pending → running → done → accepted`; advancement will be controlled by explicit evidence and gate policy rather than executor confidence
-3. **Provider Router** — routes each phase to the right executor; independent or cross-model review is an optional gate policy rather than a required path
+3. **Future Provider Router** — the durable runtime may later route phases to different executors; the current Goal bridge has no execution-model orchestration and runs entirely in the Codex App model selected by the user
 4. **Permission Gate** — three-tier progressive permissions: `minimal` / `analyze` / `execute`
 
 ---
@@ -109,7 +109,7 @@ The Task Engine is one of Sagitta's two cores. It wraps coding agents (Claude Co
 | 4 | DBOS-backed execution runtime and deterministic output checks | Planned |
 | 5 | Sagitta as the persistent persona and task-management assistant | Planned |
 
-Cross-model routing, richer permissions, memory retrieval, social integrations, and visual management follow after a usable execution path exists.
+Cross-model routing, richer permissions, memory retrieval, social integrations, and visual management follow after a usable execution path exists. Today only Plan Package authoring and its fresh pre-launch review are fixed to `gpt-5.6-sol` with high reasoning effort; Goal execution does not select or switch models.
 
 ---
 
@@ -120,7 +120,7 @@ Cross-model routing, richer permissions, memory retrieval, social integrations, 
 
 ## Planning MVP
 
-The first runnable slice is deliberately narrow: natural language → Codex workspace inspection → a planner-written Plan Package with a validated, hierarchical Plan IR → a manual Goal export. Sagitta itself does not execute phases yet; the user manually starts the exported Goal in Codex App.
+The first runnable slice is deliberately narrow: natural language → Codex workspace inspection → a planner-written Plan Package and hierarchical Plan IR → fresh read-only pre-launch review with one bounded planner revision → a manual Goal export. Sagitta itself does not execute phases yet; the user manually starts the exported Goal in Codex App.
 
 ```bash
 python3 -m venv .venv
@@ -130,7 +130,7 @@ python -m pip install -e .
 # Configure the existing directory that Codex may inspect.
 sagitta init --workspace /absolute/path/to/workspace
 
-# Codex plans with workspace-write access, using gpt-5.6-terra at high reasoning effort.
+# Codex plans with workspace-write access, using gpt-5.6-sol at high reasoning effort.
 # It may run short, reversible project checks to establish planning facts and write its contract package.
 # It does not begin delivery work, edit source, install dependencies, or change Git state while planning.
 sagitta plan "Add OAuth login while preserving the existing session flow"
@@ -138,11 +138,12 @@ sagitta plan "Add OAuth login while preserving the existing session flow"
 # If planning returns needs_input, answer a named question and resume that same Codex session.
 sagitta answer <run-id> <question-id> "Use the existing session flow"
 
-# Export the ready workflow as a Goal, paste it into a Codex App Goal, and let it run.
+# A fresh read-only Codex reviews the whole package before ready. One revision is allowed.
+# Export the reviewed workflow as a Goal, paste it into a Codex App Goal, and let it run.
 sagitta goal <run-id>
 ```
 
-Prompts are regular editable files under `src/sagitta/prompts/`. The active planner prompt is `planner.md`; it includes a canonical IR few-shot and an ARIS-style contract-writing example. `phase_executor.md` records a later execution rule that missing information becomes explicit assumptions after a task has started.
+Prompts are regular editable files under `src/sagitta/prompts/`. `planner.md` includes the canonical IR few-shot, ARIS-style contract example, and mandatory per-outcome admission conditions. `prelaunch_review.md` reviews the complete package for uncovered requirements, fakeable gates, and invalid terminal paths. `goal.md` compiles the reviewed package into the temporary deterministic Goal protocol. `phase_executor.md` records a later execution rule for the durable runtime.
 
 The IR starts with ordinary `phase` nodes. Every phase declares its business `outputs` and `expected_facts`, then uses `on` to route task-specific outcomes to their next target. These contracts make completion inspectable without forcing a universal outcome vocabulary. Nested `scope` nodes are optional: use them only for real hierarchical work or bounded nested loops. Runtime will later maintain scope-local and workflow-wide entry counters, which conditional `on` routes can read with expressions such as `$major.minor < 3 and $workflow.minor < 8`. A phase's `.retry` counter is strictly for a direct transition back to that same phase; a repair cycle that travels through another phase must use a scope or workflow entry counter.
 
@@ -152,16 +153,19 @@ Each planning session is durable and inspectable under `~/.sagitta/plans/<plan-i
 - `TASK_CONTRACT.md` is the global source of truth for task-specific scope, trusted inputs, delivery, authority, and stop conditions;
 - `phases/<phase-id>.md` is the concrete execution contract for each workflow phase;
 - `ir.json` is written directly by the planner at `ready` and is the plan's only workflow source;
+- `PRELAUNCH_REVIEW.md` is the final fresh-context launch verdict;
 - `events.jsonl` records planning lifecycle events;
-- `codex/` keeps each raw Codex JSONL event stream, stderr log, and final structured response.
+- `codex/` keeps planner calls, while `reviews/` keeps each fresh pre-launch review trace and response.
 
-The planner may inspect and revise this contract package at any point, and may ask questions whenever a user decision remains material. `sagitta answer` resumes the same Codex session from the plan's recorded workspace and sends only the newly supplied answer. Codex retains the preceding planning conversation; Sagitta separately retains the full Q&A for audit and later execution context, without injecting it back into the planner prompt. A `ready` response contains only planning status; Sagitta accepts it only when the global contract and every phase contract exist and are non-empty, and the planner-written `ir.json` passes local workflow validation.
+The planner may inspect and revise this contract package at any point, and may ask questions whenever a user decision remains material. `sagitta answer` resumes the same Codex session from the plan's recorded workspace and sends only the newly supplied answer. Codex retains the preceding planning conversation; Sagitta separately retains the full Q&A for audit and later execution context, without injecting it back into the planner prompt. When the planner proposes `ready`, Sagitta first validates the files and IR, then starts a fresh read-only Sol-high review. A rejection becomes a new observation for the original planner session; it may revise once or return `needs_input`. A second rejection ends as `planning_review_failed` and cannot export a Goal. A passing verdict freezes SHA-256 values for the reviewed contracts and IR; Goal export refuses a package changed after review.
 
-`sagitta goal <run-id>` writes `goal/GOAL.md` into that plan's directory and prints the same self-contained text for pasting into Codex App. This compatibility bridge asks Goal to keep an uncommitted `.sagitta-goal-state.json` in the workspace while it follows the compiled graph. It explicitly links the global contract and the matching phase contract before each phase, while compiling IR navigation into natural-language instructions rather than exposing IR JSON or counter syntax to the executor. Its final user response remains task-defined rather than following a forced report template. It is a temporary substitute for Sagitta's future runtime; Goal's review records remain advisory unless backed by independent or deterministic evidence.
+`sagitta goal <run-id>` exports only a Plan Package with a passing pre-launch review. The generated Goal links the task, review, and phase contracts and compiles IR navigation into natural language rather than exposing IR JSON or counter syntax. During manual execution it maintains `.sagitta-goal-state.json`, append-only `.sagitta-goal/RUN_LEDGER.jsonl`, and `.sagitta-goal/CHECKPOINT.md`. Every phase registers its outcome conditions before work, records commands/evidence, reconciles the contract before transition, and may choose an outcome only when its complete admission condition is proved. Graph completion ends as `ready_for_human_audit`, `delivery_limited`, or `blocked`; the executor cannot declare `delivery_complete`. This remains a temporary substitute for the future durable runtime.
+
+Plans created before the pre-launch-review contract are not grandfathered into Goal export. Re-plan them so the package can be reviewed and content-hash-bound before execution.
 
 `outputs` and `expected_facts` are business contracts, rather than current runtime state. They describe what a phase must leave behind and what should be confirmable after it finishes. The later runtime will perform cheap deterministic completion checks wherever possible; judgment-heavy review remains an explicit `review` phase or a later acceptance policy.
 
-If the planner-written `ir.json` fails Sagitta's local IR validator, Sagitta stores the validation error, then gives the same Codex session one automatic opportunity to correct the IR structure. A second invalid result remains recorded and ends planning with an error.
+If the planner-written `ir.json` fails Sagitta's local IR validator, Sagitta stores the validation error, then gives the same Codex session one automatic opportunity to correct the IR structure. Separately, a rejected pre-launch review permits one package-level revision. A second structural error or second review rejection remains recorded and prevents Goal export.
 
 ### Workspace policy
 
@@ -172,6 +176,34 @@ The MVP starts planning with workspace-write access. This lets Codex create the 
 - a non-Git local or remote directory is copied into the managed workspace.
 
 Sagitta will leave resulting content in that chosen operating location when work ends; it will not clean it up automatically.
+
+## Local assistant and project console MVP
+
+The planning CLI remains available as above. The first collaboration slice adds a loopback-only local console for registered projects, full audited transcripts, an editable profile, Codex planning delegation, and manual Goal inspection.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+
+# Starts only on localhost by default.
+sagitta-web
+```
+
+Open `http://127.0.0.1:8123`. Set `SAGITTA_HOST` and `SAGITTA_PORT` only when an explicit alternate local binding or port is required. The first server start registers the current repository as the **self-hosting inner project**; the outer app's state remains in `~/.sagitta` (or the home passed when constructing the app), rather than in that operating workspace.
+
+For a live conversation, configure DeepSeek in the terminal that starts the server:
+
+```bash
+export DEEPSEEK_API_KEY="your-key"
+sagitta-web
+```
+
+The key is read only when a live turn is requested and is never written to the registry, transcript, API response, or frontend. With no key, the project dashboard, plan/Goal information, and transcripts still work; chat gives an actionable `DEEPSEEK_API_KEY` diagnostic.
+
+The console supports registering an existing local project, selecting its workspace, talking with Sagitta before it delegates the existing Codex planner, explicitly answering a planner question, viewing `ir.json` as a workflow graph, exporting/reading a reviewed ready Goal, and displaying executor-owned `.sagitta-goal-state.json`. The browser cannot bypass Sagitta to start planning directly. It has no arbitrary shell, source-edit, browser filesystem, API-key, or raw-environment capability. Goal remains a manual compatibility bridge: this MVP does not supervise a Goal run, receive real-time Goal events, interrupt Codex, or implement the future DBOS runtime.
+
+Profile is editable at `~/.sagitta/profile.md`; complete append-only conversation history is at `~/.sagitta/conversations/<project-id>.jsonl`. `~/.sagitta/conversation-summaries/<project-id>.md` is reserved for later compression and has no retrieval or memory inference behavior in this release. See [the implementation map](docs/assistant-mvp.md) for state ownership and API details.
 
 ---
 

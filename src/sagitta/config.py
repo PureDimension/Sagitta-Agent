@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -127,6 +128,9 @@ class PlanningRunStore:
     def phase_contract_path(self, run_id: str, phase_id: str) -> Path:
         return self.directory_for(run_id) / "phases" / f"{phase_id}.md"
 
+    def prelaunch_review_path(self, run_id: str) -> Path:
+        return self.directory_for(run_id) / "PRELAUNCH_REVIEW.md"
+
     def save(self, record: dict[str, Any]) -> None:
         run_id = record.get("id")
         if not isinstance(run_id, str):
@@ -162,6 +166,45 @@ class PlanningRunStore:
         _write_text(prefix.with_suffix(".events.jsonl"), stdout)
         _write_text(prefix.with_suffix(".stderr.log"), stderr)
         _write_json(prefix.with_suffix(".response.json"), response)
+
+    def save_review_call(
+        self,
+        run_id: str,
+        sequence: int,
+        stdout: str,
+        stderr: str,
+        response: dict[str, Any],
+    ) -> None:
+        if sequence < 0:
+            raise StorageError("review call sequence must be non-negative")
+        prefix = self.directory_for(run_id) / "reviews" / f"{sequence:03d}-prelaunch"
+        _write_text(prefix.with_suffix(".events.jsonl"), stdout)
+        _write_text(prefix.with_suffix(".stderr.log"), stderr)
+        _write_json(prefix.with_suffix(".response.json"), response)
+
+    def save_prelaunch_review(self, run_id: str, review: str) -> Path:
+        path = self.prelaunch_review_path(run_id)
+        _write_text(path, review)
+        return path
+
+    def plan_package_hashes(self, run_id: str) -> dict[str, str]:
+        directory = self.directory_for(run_id)
+        paths = [directory / "TASK_CONTRACT.md", directory / "ir.json"]
+        paths.extend(sorted((directory / "phases").glob("*.md")))
+        missing = [str(path) for path in paths if not path.is_file()]
+        if missing:
+            raise StorageError("cannot fingerprint incomplete Plan Package: " + ", ".join(missing))
+        return {
+            str(path.relative_to(directory)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in paths
+        }
+
+    @staticmethod
+    def file_sha256(path: Path) -> str:
+        try:
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+        except FileNotFoundError as error:
+            raise StorageError(f"missing file: {path}") from error
 
     def save_ir(self, run_id: str, workflow: dict[str, Any]) -> None:
         _write_json(self.directory_for(run_id) / "ir.json", workflow)

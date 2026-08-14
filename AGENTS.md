@@ -49,7 +49,7 @@ The core loop: **Natural Language → Workflow Compilation → Boundary Confirma
 │  │  └──────────┘  └──────────┘  └──────┘ │ │
 │  │                                        │ │
 │  │  ┌──────────────────────────────────┐  │ │
-│  │  │       Provider Router             │  │ │
+│  │  │    Future Provider Router          │  │ │
 │  │  │  Claude Code / Codex / DeepSeek  │  │ │
 │  │  └──────────────────────────────────┘  │ │
 │  └────────────────────────────────────────┘ │
@@ -73,14 +73,14 @@ The core loop: **Natural Language → Workflow Compilation → Boundary Confirma
 
 The Task Engine is the core differentiator. It wraps coding agents (Claude Code, Codex, DeepSeek) in a state-machine orchestration layer:
 
-1. **Planner**: Converts natural language requirements into a structured workflow. The current planning core gives Codex workspace-write access to create a per-plan contract package and run short planning checks in the project, persists user decisions over one resumed session, uses a canonical few-shot prompt, locally validates the planner-written `ir.json`, and permits one structural repair attempt. Planning must not begin delivery work or edit source.
+1. **Planner**: Converts natural language requirements into a structured workflow. The current planning core gives one persistent Codex session workspace-write access to create a per-plan contract package and run short planning checks, persists user decisions, and locally validates the planner-written `ir.json`. A fresh read-only Codex then performs pre-launch review; one rejection returns to the original session as a ReAct observation for bounded revision. Every phase contract defines the evidence conditions for every IR outcome. Planning must not begin delivery work or edit source.
 
 2. **Future State Machine**: Phase-level execution will use ARIS-style gating:
    - `pending → running → done → accepted`
    - `accepted` requires the declared policy: machine evidence, independent AI review, or human approval
    - `done`-but-not-`accepted` phases are re-validated on resume
 
-3. **Provider Router**: Routes each phase to the right model:
+3. **Future Provider Router**: The durable runtime may later route phases to different models. The current manual Goal bridge performs no execution-model orchestration; the user-selected Codex App model executes the complete Goal. A future router may use:
    - Claude Code (heavy coding, debugging)
    - DeepSeek (light analysis, cheap tasks)
    - Codex/GPT (optional independent execution or review)
@@ -148,12 +148,12 @@ What Sagitta adds that ARIS lacks:
 ### 1. Implemented: Planning Core
 - `sagitta init`, `plan`, `answer`, and `show`
 - Codex workspace inspection plus a planner-written Plan Package
-- Natural language → validated Plan Package and Plan IR
-- Persistent Q&A, raw events, planning state, contracts, and ready `ir.json`
+- Natural language → locally validated, fresh-context reviewed Plan Package and Plan IR
+- Persistent Q&A, planner/reviewer traces, pre-launch verdict, contracts, and ready `ir.json`
 
 ### 2. Temporary Execution Bridge
 - `sagitta goal <plan-id>` exports a paste-ready Codex App Goal for initial use
-- Goal temporarily maintains workspace-local traversal evidence; it is not Sagitta's future runtime
+- Goal temporarily applies ARIS-style registered ledger/checkpoint/outcome-gate discipline and ends at human audit, limited delivery, or blocked; it is not Sagitta's future runtime
 
 ### 3. Durable Execution
 - Plan IR → DBOS workflow compiler
@@ -181,7 +181,7 @@ This file is the canonical design document for Sagitta-Agent. When contributing:
 - The Task Engine follows ARIS's acceptance-gate pattern (`acceptance-gate.md`): an executor can DRIVE but cannot silently change or acquit its own acceptance policy
 - The Persona Layer has high agency and may push back — this is by design, not a bug
 - Planning sessions persist at `~/.sagitta/plans/<plan-id>/`; future execution runs will persist separately at `.sagitta/runs/<run-id>.json`
-- A ready planning package contains `TASK_CONTRACT.md`, one phase contract at `phases/<phase-id>.md` for every IR phase, and planner-written `ir.json`; `ir.json` is the single workflow source, while the structured planner response carries only status, summary, and questions
+- A ready planning package contains `TASK_CONTRACT.md`, one phase contract at `phases/<phase-id>.md` for every IR phase, planner-written `ir.json`, and a passing `PRELAUNCH_REVIEW.md`; every IR outcome has a matching contract-defined admission condition, while the structured planner response carries only status, summary, and questions
 - A Plan IR phase has `outputs` and `expected_facts` as business contracts; runtime state, worktrees, counters, checkpoints, and permissions are not workflow phases
 - A minimal workflow language/IR is a Phase 1 design contract; keep it small, inspectable, AI-generable, and statically validatable
 - Execution units (Claude Code, Codex, model APIs) are pluggable adapters behind the bridge layer; the orchestration layer never depends on any specific one

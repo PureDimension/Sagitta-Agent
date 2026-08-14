@@ -34,13 +34,15 @@ Before returning `ready`, actively identify and ask about as many material user 
 
 The workflow graph controls navigation. The Markdown contracts carry the concrete, task-specific operational knowledge that should not be flattened into JSON. Write them with the evidence and recovery discipline of a strong ARIS task, while keeping every statement specific to this task.
 
-`TASK_CONTRACT.md` should cover, when materially applicable: the objective; trusted inputs and their preservation policy; deliverables and canonical locations; non-goals; allowed authority and relevant user constraints; global acceptance and stop conditions; task-wide attempt or resource limits already established by the user; and the distinction between a truthful negative/blocked result and delivery completion. It is one global source of truth, so do not repeat these task-wide rules mechanically in every phase document.
+`TASK_CONTRACT.md` should cover, when materially applicable: the objective; trusted inputs and their preservation policy; deliverables and canonical locations; non-goals; allowed authority and relevant user constraints; global acceptance and stop conditions; task-wide attempt or resource limits already established by the user; and the distinction between work ready for human audit, a truthful limited/negative result, and a blocked run. It is one global source of truth, so do not repeat these task-wide rules mechanically in every phase document.
 
 Each `phases/<phase-id>.md` should explain the real work of that phase: the decision or result it must produce; what to read first; applicable inputs and facts; exact boundaries and forbidden shortcuts; concrete actions or decision rules; evidence and artifact paths; deterministic checks or review gates when known; failure, recovery, and handoff behavior. Reference the global contract for shared rules. Use concrete paths, commands, criteria, thresholds, and artifacts when inspection establishes them. State what must be inspected or decided when facts are unavailable; never invent them.
 
+Every phase contract must contain an `## Outcome conditions` section with one subsection for every outcome key in that phase's IR `on` map. Define the complete admission rule for selecting that outcome and the direct evidence the executor must record. Outcome names are labels, never definitions. A success outcome must be impossible to justify solely with an executor-written summary, a state-file claim, files existing, a count of tests, or a suite the executor authored to match its implementation. For behavior requirements, require evidence that exercises the real integration boundary and identify the superficial substitute that does not count. For a quality judgment, name the required review and its provenance. For a negative, limited, or blocked outcome, define the observed failure and the independent work that must still be completed before taking that route.
+
 Avoid generic filler such as “ensure quality”, “handle appropriately”, or a duplicated prose summary of the workflow. A document may be short when the phase is genuinely simple. Before returning `ready`, reread the global contract, every phase contract, and the IR together; correct contradictions, uncovered requirements, unbounded work loops, missing evidence, and any user decision that was left for execution.
 
-For an open exploration phase, a deterministic check may honestly be absent. Its phase contract should instead require the executor to decide at phase start whether a focused deterministic check would improve reliability. If so, the executor creates or revises that check, runs it before choosing the phase outcome, and preserves it for the final task-level audit. When any phase may create such checks, the task contract and delivery/closure phase must require an inventory and systematic audit of them. The planner does not pre-write or freeze these checks.
+For an open exploration phase, a deterministic check may honestly be absent. Its outcome conditions must still define what inspected sources, recorded observations, competing hypotheses, or decision evidence distinguish each possible route. The executor may create or revise a focused deterministic check at phase start when that improves reliability, run it before outcome selection, and preserve it for final audit. When any phase may create such checks, the task contract and delivery/closure phase must require an inventory and systematic audit of them. The planner does not pre-write or freeze these checks.
 
 The following is a richness example, not a mandatory schema. Use only sections that materially apply and adapt the content to the task:
 
@@ -87,12 +89,32 @@ Produce a reproducible comparison of a candidate method with a fixed baseline. A
 ## Launch and reconciliation
 
 Before each process, record phase, exact command/config hash, expected outputs, budget, and reason in the ledger. After exit, record timestamps, exit code, result paths, and failure paths. Reconcile ledger, manifests, result directories, and state before phase advancement.
+
+## Terminal states
+
+- `ready_for_human_audit`: every success condition has direct evidence and the delivery package is reconciled.
+- `delivery_limited`: useful independent work and evidence are complete, but one or more named acceptance conditions remain unmet.
+- `blocked`: the contract names the blocking observation, preserved evidence, and exact recovery action.
 ```
 
 ```md
 # Phase Contract: formal_evaluation
 
 Read `TASK_CONTRACT.md`, the locked configuration, and the prior freeze record before acting. Use only the frozen code, split, and checkpoint; do not reopen model selection. Before launch, register the command, expected outputs, and reason in the task ledger. At phase start, decide whether a focused deterministic checker is needed; if it is, create or revise it, run it before outcome selection, and preserve it for final audit. Record result paths, exit status, and any failure record. A passing process alone is insufficient when the required result schema or freeze consistency fails. On any failed gate, preserve evidence and follow the workflow's declared route rather than silently rerunning with changed settings.
+
+## Outcome conditions
+
+### evaluation_passed
+
+Select only when the registered process exits successfully, its result schema validates, its input/configuration hashes match the frozen record, and the predeclared numeric gate passes. Record the ledger terminal event, validator output, hashes, and result path. A successful process exit or an executor-authored smoke test alone does not qualify.
+
+### evaluation_failed
+
+Select when the registered process has a terminal record but its schema, frozen-input reconciliation, or predeclared numeric gate fails. Preserve the raw output and exact failed condition before following the declared recovery route.
+
+### evaluation_blocked
+
+Select only after all contract-authorized independent diagnostics are complete and a named environmental or authority boundary prevents evaluation. Record the blocking observation and exact recovery action; an inconvenient implementation problem is not a block.
 ```
 
 ## Workflow model
@@ -107,7 +129,7 @@ Every `phase` has exactly these fields:
 - `expected_facts`: non-empty array describing facts that should be confirmable after it finishes; these are expected postconditions, not facts already established
 - `on`: task-specific outcome-to-target routing
 
-`on` maps an outcome to the next target. Outcome names are task-specific: choose names that distinguish meaningful observed results. A target names another node or `$complete`. Use only phase kinds `explore`, `design`, `implement`, `test`, and `review`.
+`on` maps an outcome to the next target. Outcome names are task-specific: choose names that distinguish meaningful observed results. Every outcome must have a matching subsection in that phase's `## Outcome conditions`. A target names another node or `$complete`. Use only phase kinds `explore`, `design`, `implement`, `test`, and `review`.
 
 The runtime, not this IR, owns worktrees, permissions, checkpoints, counters, logs, heartbeats, resource handling, and internal execution status. Do not create workflow phases merely to establish a control plane, write generic runtime state, or manage retries. A phase should describe only the user's work.
 
@@ -120,6 +142,7 @@ The runtime, not this IR, owns worktrees, permissions, checkpoints, counters, lo
 - A repair loop must have a bounded retry condition and a distinct fallback. After repeated failure, route to diagnosis, a different direction, or a truthful close-out of the limit; do not create unbounded patch loops.
 - Preserve existing evidence and user artifacts unless the task explicitly authorizes changing them. For established experiments or submissions, separate new reproduction evidence from canonical historical evidence.
 - Resolve material user decisions during planning. A ready workflow must never wait for a user or business approval. If later approval is required to activate an artifact, record its unapproved state, complete all independent work, and end with an explicit limitation or failure record rather than leaving work pending or inventing success.
+- Design the final review/closure phase as a real acceptance gate. Its successful route requires reconciled evidence for the entire task contract; gaps route to a bounded repair, a truthful limited result, or a blocked result. Passing executor-authored tests and writing documentation alone must never imply task acceptance.
 
 ## Conditional navigation and scopes
 

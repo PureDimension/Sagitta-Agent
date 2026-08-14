@@ -42,10 +42,20 @@ class GoalService:
             raise GoalCompilationError(str(error)) from error
         if record.get("status") != "ready":
             raise GoalCompilationError("only a ready planning run can be exported as a Goal")
+        review = record.get("prelaunch_review")
+        if not isinstance(review, dict) or review.get("verdict") != "pass":
+            raise GoalCompilationError("only a Plan Package with a passing pre-launch review can be exported as a Goal")
         try:
             workflow = self.runs.load_ir(run_id)
             validate_workflow(workflow)
             _validate_contract_files(workflow, self.runs.directory_for(run_id))
+            expected_hashes = record.get("reviewed_package_hashes")
+            if not isinstance(expected_hashes, dict) or expected_hashes != self.runs.plan_package_hashes(run_id):
+                raise ValueError("Plan Package content no longer matches its passing pre-launch review")
+            expected_review_hash = record.get("prelaunch_review_sha256")
+            actual_review_hash = self.runs.file_sha256(self.runs.prelaunch_review_path(run_id))
+            if not isinstance(expected_review_hash, str) or expected_review_hash != actual_review_hash:
+                raise ValueError("pre-launch review artifact no longer matches the ready planning state")
         except (StorageError, ValueError) as error:
             raise GoalCompilationError(f"cannot export an incomplete Plan Package: {error}") from error
 
@@ -72,6 +82,7 @@ def compile_goal(workflow: dict[str, Any], intent: str, qa: list[dict[str, Any]]
         .replace("{{PLANNING_DECISIONS}}", _format_qa(qa))
         .replace("{{ENTRY_PHASE}}", workflow["entry_phase"])
         .replace("{{TASK_CONTRACT_PATH}}", str(plan_directory / "TASK_CONTRACT.md"))
+        .replace("{{PRELAUNCH_REVIEW_PATH}}", str(plan_directory / "PRELAUNCH_REVIEW.md"))
         .replace("{{WORKFLOW_GRAPH}}", _format_nodes(workflow["phases"], plan_directory))
     )
 
@@ -185,7 +196,7 @@ def _format_condition(condition: str, current_phase_id: str) -> str:
 
 
 def _validate_contract_files(workflow: dict[str, Any], plan_directory: Path) -> None:
-    paths = [plan_directory / "TASK_CONTRACT.md"]
+    paths = [plan_directory / "TASK_CONTRACT.md", plan_directory / "PRELAUNCH_REVIEW.md"]
     paths.extend(plan_directory / "phases" / f"{phase_id}.md" for phase_id in _phase_ids(workflow["phases"]))
     missing = [str(path) for path in paths if not path.is_file() or not path.read_text(encoding="utf-8").strip()]
     if missing:

@@ -103,6 +103,8 @@ Thumbs.db
 # Local development
 playground/
 *.local
+.sagitta-goal-state.json
+.sagitta-goal/
 
 # pydantic-deep CLI data (per-project)
 .pydantic-deep/
