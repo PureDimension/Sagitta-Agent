@@ -245,7 +245,33 @@ class FakeCodexWithInvalidPrelaunchReview(FakeCodexWithPrelaunchRevision):
         )
 
 
+class FakeCodexThatCrashes:
+    def start(self, _workspace: Path, _prompt: str, _plan_directory: Path) -> CodexResult:
+        raise RuntimeError("planner process crashed")
+
+
 class PlanningServiceTests(unittest.TestCase):
+    def test_planner_failure_is_persisted_instead_of_leaving_planning_running(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            config = ConfigStore(root)
+            config.save_workspace(workspace)
+            runs = PlanningRunStore(root)
+            service = PlanningService(config, runs, FakeCodexThatCrashes())  # type: ignore[arg-type]
+
+            with self.assertRaisesRegex(RuntimeError, "planner process crashed"):
+                service.plan("Plan this work")
+
+            run_id = next((root / "plans").iterdir()).name
+            failed = runs.load(run_id)
+            self.assertEqual(failed["status"], "planning_failed")
+            self.assertTrue(failed["planning_closed"])
+            self.assertEqual(failed["last_error_type"], "RuntimeError")
+            events = (root / "plans" / run_id / "events.jsonl").read_text(encoding="utf-8")
+            self.assertIn("planning_exception_recorded", events)
+
     def test_planner_prompt_makes_retry_direct_self_calls_only(self) -> None:
         prompt = resources.files("sagitta.prompts").joinpath("planner.md").read_text(encoding="utf-8")
 
@@ -255,6 +281,7 @@ class PlanningServiceTests(unittest.TestCase):
         self.assertNotIn('"when": "$verify_change.retry < 2"', prompt)
         self.assertIn("Every phase contract must contain an `## Outcome conditions` section", prompt)
         self.assertIn("Outcome names are labels, never definitions", prompt)
+        self.assertIn('"reason": "The answer changes compatibility requirements', prompt)
 
     def test_ready_plan_requires_a_global_and_per_phase_contract(self) -> None:
         with TemporaryDirectory() as directory:

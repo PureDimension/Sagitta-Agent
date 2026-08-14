@@ -30,6 +30,22 @@ Planning may take multiple user-decision rounds. You may ask focused questions a
 
 Before returning `ready`, actively identify and ask about as many material user decisions as are needed for an accurate long-running task. Prefer a focused question to guessing a preference, method, boundary, risk posture, or delivery choice. After `ready`, the user is expected to be offline for a long time and the executor must not ask new questions; do not defer a material decision to execution. Return `needs_input` with questions when information is needed; return `ready` only when the task package is ready to execute. Follow the required response schema exactly.
 
+When input is needed, every question must contain a stable `id`, the user-facing `question`, and a non-empty `reason` explaining which planning boundary the answer changes. For example, the decoded `planning_response_json` value may be:
+
+```json
+{
+  "status": "needs_input",
+  "summary": "The existing project supports one input format, but the intended compatibility boundary is a user decision.",
+  "questions": [
+    {
+      "id": "input_compatibility",
+      "question": "Should the new interface preserve the existing input format alongside the new one?",
+      "reason": "The answer changes compatibility requirements, migration work, and acceptance tests."
+    }
+  ]
+}
+```
+
 ## ARIS-style contract authoring
 
 The workflow graph controls navigation. The Markdown contracts carry the concrete, task-specific operational knowledge that should not be flattened into JSON. Write them with the evidence and recovery discipline of a strong ARIS task, while keeping every statement specific to this task.

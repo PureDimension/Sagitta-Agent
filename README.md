@@ -190,20 +190,13 @@ python -m pip install -e .
 sagitta-web
 ```
 
-Open `http://127.0.0.1:8123`. Set `SAGITTA_HOST` and `SAGITTA_PORT` only when an explicit alternate local binding or port is required. The first server start registers the current repository as the **self-hosting inner project**; the outer app's state remains in `~/.sagitta` (or the home passed when constructing the app), rather than in that operating workspace.
+Open `http://127.0.0.1:8123`. Set `SAGITTA_HOST` and `SAGITTA_PORT` only when an explicit alternate local binding or port is required. Startup replaces an older Sagitta Web process recorded for the same port, and can also recognize an older local `sagitta-web`/`python -m sagitta.web` listener left before PID tracking was introduced. It never terminates an unrelated process that happens to own the port. The console starts with no implicit project registration; add an operating copy as an ordinary project when you want Sagitta to update Sagitta itself.
 
-For a live conversation, configure DeepSeek in the terminal that starts the server:
+Use the local settings button to configure the collaboration model, OpenAI-compatible base URL, API key, and Profile. The API key is kept in an owner-only file under `~/.sagitta/`, is never returned by the API, and may also be supplied through `DEEPSEEK_API_KEY` as an environment fallback.
 
-```bash
-export DEEPSEEK_API_KEY="your-key"
-sagitta-web
-```
+The console uses a Finder directory picker to register existing local projects and automatically selects the first available project when it opens. A Project is only a workspace; each **Task** owns an isolated conversation, Codex activity stream, Plan package, IR, Goal export, and future execution records. Its two main views are **Interaction** and **Visualization**. In **Sagitta** mode, natural language goes through the persistent PydanticAI collaboration agent; in **Direct** mode, the same Task conversation is routed directly to the Codex planner. The Visualization view renders the selected Task's Plan graph, phase contracts, package files, review, Q&A, and transitional Goal state. Goal remains a manual compatibility bridge: this MVP does not supervise a Goal run, receive real-time Goal events, interrupt Codex, or implement the future DBOS runtime.
 
-The key is read only when a live turn is requested and is never written to the registry, transcript, API response, or frontend. With no key, the project dashboard, plan/Goal information, and transcripts still work; chat gives an actionable `DEEPSEEK_API_KEY` diagnostic.
-
-The console supports registering an existing local project, selecting its workspace, talking with Sagitta before it delegates the existing Codex planner, explicitly answering a planner question, viewing `ir.json` as a workflow graph, exporting/reading a reviewed ready Goal, and displaying executor-owned `.sagitta-goal-state.json`. The browser cannot bypass Sagitta to start planning directly. It has no arbitrary shell, source-edit, browser filesystem, API-key, or raw-environment capability. Goal remains a manual compatibility bridge: this MVP does not supervise a Goal run, receive real-time Goal events, interrupt Codex, or implement the future DBOS runtime.
-
-Profile is editable at `~/.sagitta/profile.md`; complete append-only conversation history is at `~/.sagitta/conversations/<project-id>.jsonl`. `~/.sagitta/conversation-summaries/<project-id>.md` is reserved for later compression and has no retrieval or memory inference behavior in this release. See [the implementation map](docs/assistant-mvp.md) for state ownership and API details.
+Profile is editable in Settings and stored at `~/.sagitta/profile.md`; Task conversation and PydanticAI message history live together under `~/.sagitta/tasks/<task-id>/`. This makes switching between Sagitta and Direct a routing choice rather than a context change. See [the implementation map](docs/assistant-mvp.md) for state ownership and API details.
 
 ---
 

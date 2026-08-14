@@ -34,6 +34,12 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
         raise
 
 
+def _write_private_json(path: Path, value: dict[str, Any]) -> None:
+    """Atomically write credentials with owner-only permissions."""
+    _write_json(path, value)
+    os.chmod(path, 0o600)
+
+
 def _write_text(path: Path, value: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
@@ -85,6 +91,58 @@ class ConfigStore:
         if not path.is_dir():
             raise StorageError(f"configured workspace is unavailable: {path}")
         return {"workspace": str(path)}
+
+
+class ModelSettingsStore:
+    """Local OpenAI-compatible model settings for the Sagitta collaboration agent."""
+
+    default_model = "deepseek-chat"
+
+    def __init__(self, home: Path | None = None) -> None:
+        self.home = home or default_home()
+        self.path = self.home / "model.json"
+
+    def _stored(self) -> dict[str, Any]:
+        if not self.path.exists():
+            return {}
+        return _read_json(self.path)
+
+    def effective(self) -> dict[str, str | None]:
+        stored = self._stored()
+        model = stored.get("model")
+        base_url = stored.get("base_url")
+        api_key = stored.get("api_key")
+        if not isinstance(model, str) or not model.strip():
+            model = os.environ.get("SAGITTA_MODEL") or self.default_model
+        if not isinstance(base_url, str) or not base_url.strip():
+            base_url = os.environ.get("DEEPSEEK_BASE_URL") or None
+        if not isinstance(api_key, str) or not api_key.strip():
+            api_key = os.environ.get("DEEPSEEK_API_KEY") or None
+        return {"model": model.strip(), "base_url": base_url.strip() if isinstance(base_url, str) else None, "api_key": api_key.strip() if isinstance(api_key, str) else None}
+
+    def display(self) -> dict[str, Any]:
+        effective = self.effective()
+        return {
+            "model": effective["model"],
+            "base_url": effective["base_url"] or "",
+            "api_key_configured": bool(effective["api_key"]),
+        }
+
+    def save(self, *, model: str, base_url: str, api_key: str | None, clear_api_key: bool = False) -> dict[str, Any]:
+        if not model.strip():
+            raise StorageError("model must be non-empty")
+        normalized_base_url = base_url.strip()
+        if normalized_base_url and not normalized_base_url.startswith(("https://", "http://")):
+            raise StorageError("base_url must start with http:// or https://")
+        stored = self._stored()
+        stored["model"] = model.strip()
+        stored["base_url"] = normalized_base_url
+        if clear_api_key:
+            stored.pop("api_key", None)
+        elif api_key is not None and api_key.strip():
+            stored["api_key"] = api_key.strip()
+        _write_private_json(self.path, stored)
+        return self.display()
 
 
 class PlanningRunStore:

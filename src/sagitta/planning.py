@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
+
+import fcntl
 
 from .codex import CodexPlanner
 from .config import ConfigStore, PlanningRunStore, StorageError
@@ -16,6 +20,10 @@ from .ir import ValidationError, validate_planning_response, validate_workflow
 
 class PlanningError(RuntimeError):
     """Raised when a planning request cannot be started or resumed."""
+
+
+class PlanBusyError(PlanningError):
+    """Raised when another request is already advancing the same Plan."""
 
 
 MAX_IR_REPAIR_ATTEMPTS = 1
@@ -37,7 +45,12 @@ class PlanningService:
         self.runs = runs
         self.codex = codex
 
-    def plan(self, intent: str) -> dict[str, Any]:
+    def plan(self, intent: str, *, task_id: str | None = None) -> dict[str, Any]:
+        record = self.begin(intent, task_id=task_id)
+        return self.run_initial(record["id"])
+
+    def begin(self, intent: str, *, task_id: str | None = None) -> dict[str, Any]:
+        """Persist a Plan before dispatching its long-running Codex invocation."""
         if not intent.strip():
             raise PlanningError("intent must be non-empty")
         try:
@@ -51,6 +64,7 @@ class PlanningService:
             "created_at": _now(),
             "updated_at": _now(),
             "workspace": str(workspace),
+            "task_id": task_id,
             "intent": intent,
             "session_id": None,
             "qa": [],
@@ -62,14 +76,76 @@ class PlanningService:
             "prelaunch_revision_count": 0,
         }
         self.runs.create(record)
-        package_directory = self.runs.prepare_contract_package(run_id)
+        self.runs.prepare_contract_package(run_id)
         self.runs.append_event(run_id, {"at": _now(), "type": "planning_started"})
-        result = self.codex.start(workspace, self._initial_prompt(intent, package_directory), package_directory)
-        return self._apply_codex_result(record, result, sequence=0, label="initial")
+        return record
+
+    def run_initial(self, run_id: str) -> dict[str, Any]:
+        """Run the initial Codex call for a previously persisted planning record."""
+        try:
+            record = self.runs.load(run_id)
+        except StorageError as error:
+            raise PlanningError(str(error)) from error
+        if record.get("status") != "planning":
+            raise PlanningError("planning run is not ready for its initial Codex call")
+        workspace = Path(record.get("workspace", ""))
+        if not workspace.is_dir():
+            raise PlanningError(f"planning workspace is unavailable: {workspace}")
+        package_directory = self.runs.directory_for(run_id)
+        try:
+            result = self.codex.start(
+                workspace,
+                self._initial_prompt(str(record.get("intent", "")), package_directory),
+                package_directory,
+            )
+            return self._apply_codex_result(record, result, sequence=0, label="initial")
+        except Exception as error:
+            self._record_planning_failure(record, error)
+            raise
 
     def answer(self, run_id: str, question_id: str, answer: str) -> dict[str, Any]:
-        if not answer.strip():
-            raise PlanningError("answer must be non-empty")
+        """Resume from one explicit CLI answer without changing the CLI contract."""
+        return self._answer_many(run_id, [{"id": question_id, "answer": answer}], require_all=False)
+
+    def answer_many(self, run_id: str, answers: list[dict[str, str]]) -> dict[str, Any]:
+        """Atomically record one complete question round and resume Codex once."""
+        return self._answer_many(run_id, answers, require_all=True)
+
+    @contextmanager
+    def _run_lock(self, run_id: str) -> Iterator[None]:
+        path = self.runs.directory_for(run_id) / ".planning.lock"
+        descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise PlanBusyError("This Plan is already processing an answer. Wait for its response before submitting again.") from error
+            yield
+        finally:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+
+    def _answer_many(self, run_id: str, answers: list[dict[str, str]], *, require_all: bool) -> dict[str, Any]:
+        if not answers:
+            raise PlanningError("at least one answer is required")
+        normalized: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for item in answers:
+            question_id = item.get("id") if isinstance(item, dict) else None
+            answer = item.get("answer") if isinstance(item, dict) else None
+            if not isinstance(question_id, str) or not question_id or not isinstance(answer, str) or not answer.strip():
+                raise PlanningError("every answer requires a non-empty id and answer")
+            if question_id in seen:
+                raise PlanningError(f"duplicate answer for pending question: {question_id}")
+            seen.add(question_id)
+            normalized.append({"id": question_id, "answer": answer.strip()})
+
+        with self._run_lock(run_id):
+            return self._resume_answers(run_id, normalized, require_all=require_all)
+
+    def _resume_answers(self, run_id: str, answers: list[dict[str, str]], *, require_all: bool) -> dict[str, Any]:
         try:
             record = self.runs.load(run_id)
         except StorageError as error:
@@ -80,35 +156,69 @@ class PlanningService:
         questions = response.get("questions") if isinstance(response, dict) else None
         if not isinstance(questions, list):
             raise PlanningError("planning run has no pending questions")
-        question = next((item for item in questions if item.get("id") == question_id), None)
-        if not isinstance(question, dict):
-            raise PlanningError(f"unknown pending question: {question_id}")
+        question_map = {item.get("id"): item for item in questions if isinstance(item, dict) and isinstance(item.get("id"), str)}
+        answer_ids = {item["id"] for item in answers}
+        unknown = answer_ids - set(question_map)
+        if unknown:
+            raise PlanningError("unknown pending question: " + ", ".join(sorted(unknown)))
+        if require_all and answer_ids != set(question_map):
+            missing = set(question_map) - answer_ids
+            raise PlanningError("submit one answer for every pending question; missing: " + ", ".join(sorted(missing)))
 
         qa = list(record.get("qa", []))
-        qa.append({"id": question_id, "question": question["question"], "answer": answer})
+        for item in answers:
+            question = question_map[item["id"]]
+            qa.append({"id": item["id"], "question": question["question"], "answer": item["answer"]})
         workspace = Path(record.get("workspace", ""))
         if not workspace.is_dir():
             raise PlanningError(f"planning workspace is unavailable: {workspace}")
         session_id = record.get("session_id")
         if not isinstance(session_id, str) or not session_id:
             raise PlanningError("planning run has no Codex session id")
+        for item in answers:
+            self.runs.append_event(run_id, {"at": _now(), "question_id": item["id"], "type": "answer_recorded"})
+        try:
+            result = self.codex.resume(
+                workspace,
+                session_id,
+                self._answers_prompt(answers, self.runs.directory_for(run_id)),
+                self.runs.directory_for(run_id),
+            )
+            record["qa"] = qa
+            return self._apply_codex_result(
+                record,
+                result,
+                sequence=int(record.get("codex_call_count", 0)),
+                label="resume",
+            )
+        except Exception as error:
+            record["qa"] = qa
+            self._record_planning_failure(record, error)
+            raise
+
+    def _record_planning_failure(self, record: dict[str, Any], error: Exception) -> None:
+        existing_status = record.get("status")
+        status = existing_status if existing_status in {"planning_review_failed", "invalid_ir"} else "planning_failed"
+        record.update(
+            {
+                "updated_at": _now(),
+                "status": status,
+                "planning_closed": True,
+                "last_error": str(error),
+                "last_error_type": type(error).__name__,
+            }
+        )
         self.runs.append_event(
-            run_id,
-            {"at": _now(), "question_id": question_id, "type": "answer_recorded"},
+            record["id"],
+            {
+                "at": _now(),
+                "error": str(error),
+                "error_type": type(error).__name__,
+                "status": status,
+                "type": "planning_exception_recorded",
+            },
         )
-        result = self.codex.resume(
-            workspace,
-            session_id,
-            self._answer_prompt(question_id, answer, self.runs.directory_for(run_id)),
-            self.runs.directory_for(run_id),
-        )
-        record["qa"] = qa
-        return self._apply_codex_result(
-            record,
-            result,
-            sequence=int(record.get("codex_call_count", 0)),
-            label="resume",
-        )
+        self.runs.save(record)
 
     def _apply_codex_result(
         self,
@@ -413,10 +523,13 @@ class PlanningService:
             .replace("{{PLAN_DIRECTORY}}", str(package_directory))
         )
 
-    def _answer_prompt(self, question_id: str, answer: str, package_directory: Path) -> str:
+    def _answers_prompt(self, answers: list[dict[str, str]], package_directory: Path) -> str:
+        rendered_answers = "\n\n".join(
+            f"Question `{item['id']}`:\n{item['answer']}" for item in answers
+        )
         return (
-            "Continue the same planning task. The user has answered the pending planning question "
-            f"`{question_id}`:\n\n{answer}\n\n"
+            "Continue the same planning task. The user has answered this planning round:\n\n"
+            f"{rendered_answers}\n\n"
             "You may inspect the workspace and revise the planning contract package as needed. "
             f"Its only writable planning location is:\n{package_directory}\n\n"
             "Then return a fresh response that follows the output contract."

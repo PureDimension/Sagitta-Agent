@@ -76,7 +76,11 @@ class CodexPlannerTests(unittest.TestCase):
 
         self.assertEqual(result.session_id, "thread-1")
         self.assertEqual(captured_cwd, workspace)
-        self.assertEqual(captured[:4], ["codex", "exec", "resume", "thread-1"])
+        self.assertEqual(captured[:3], ["codex", "exec", "resume"])
+        self.assertEqual(captured[-2:], ["thread-1", "Continue"])
+        self.assertNotIn("-C", captured)
+        self.assertNotIn("--add-dir", captured)
+        self.assertNotIn("workspace-write", captured)
 
     def test_review_uses_a_fresh_read_only_session_and_review_schema(self) -> None:
         captured: list[str] = []
@@ -135,3 +139,32 @@ class CodexPlannerTests(unittest.TestCase):
                 plan_directory = workspace / "plan"
                 plan_directory.mkdir()
                 CodexPlanner(run_command=fake_run).start(workspace, "Plan this task", plan_directory)
+
+    def test_records_jsonl_activity_for_the_frontend(self) -> None:
+        def fake_run(command, **_kwargs):
+            output_path = Path(command[command.index("--output-last-message") + 1])
+            output_path.write_text(
+                transport_response(
+                    {"status": "needs_input", "summary": "Need input.", "questions": []},
+                ),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout='{"type":"thread.started","thread_id":"thread-1"}\n{"type":"turn.started"}\n{"type":"item.completed","item":{"type":"command_execution","command":"pytest","exit_code":0}}\n{"type":"turn.completed"}\n',
+                stderr="",
+            )
+
+        with TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            plan_directory = workspace / "plan"
+            plan_directory.mkdir()
+            CodexPlanner(run_command=fake_run).start(workspace, "Plan this task", plan_directory)
+            events = [
+                json.loads(line)
+                for line in (plan_directory / "activity.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+
+        self.assertEqual([event["event"]["type"] for event in events], ["thread.started", "turn.started", "item.completed", "turn.completed"])
+        self.assertTrue(all(event["source"] == "codex" for event in events))

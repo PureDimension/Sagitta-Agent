@@ -102,6 +102,7 @@ Thumbs.db
 
 # Local development
 playground/
+/workspace/
 *.local
 .sagitta-goal-state.json
 .sagitta-goal/

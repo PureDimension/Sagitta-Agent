@@ -1,3 +1,141 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sagitta Console</title><link rel="stylesheet" href="/assets/style.css"></head>
-<body><main><header><p class="eyebrow">SAGITTA / LOCAL CONSOLE</p><h1>Project flight deck</h1><p id="config">Loading local configuration…</p><p id="notice" role="status"></p></header><section class="glass grid"><aside><h2>Projects</h2><div id="projects"></div><form id="register"><input name="id" placeholder="project-id" required><input name="label" placeholder="Label" required><input name="workspace" placeholder="/existing/workspace" required><button>Register project</button></form><section><h3>Profile</h3><form id="profile"><textarea name="content" aria-label="Profile" placeholder="Your collaboration profile"></textarea><button>Save profile</button></form></section></aside><article><h2 id="project-title">Choose a project</h2><p id="workspace"></p><div class="cards"><section><h3>Planner</h3><p>Discuss the task with Sagitta first. Planner questions appear here and require your explicit answer.</p><div id="pending">No pending planner question.</div></section><section><h3>Goal compatibility</h3><pre id="goal-state">—</pre></section></div><section><h3>Conversation</h3><div id="messages" class="messages"></div><form id="chat"><textarea name="content" placeholder="Talk with Sagitta…" required></textarea><button>Send</button></form></section><section><h3>Plans</h3><div id="plans"></div><div id="graph" class="graph"></div><section id="plan-detail" class="detail">Select a workflow node to inspect its contract.</section><button id="export-goal" disabled>Export ready Goal</button><pre id="goal-content"></pre></section></article></section></main><script type="module" src="/assets/app.js"></script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Sagitta</title>
+    <link rel="stylesheet" href="/assets/style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace-layout">
+        <aside class="project-sidebar glass">
+          <div class="sidebar-brand"><span class="brand-mark">✦</span><span>SAGITTA</span></div>
+          <div class="sidebar-heading">
+            <div>
+              <p class="eyebrow">WORKSPACE</p>
+              <h2>Projects</h2>
+            </div>
+            <button
+              id="add-project"
+              class="icon-button"
+              type="button"
+              aria-label="Add project"
+            >
+              ＋
+            </button>
+          </div>
+          <div id="projects" class="project-list"></div>
+          <p id="empty-projects" class="empty-state" hidden>
+            Start by selecting a local project directory.
+          </p>
+          <div class="sidebar-controls">
+            <span id="backend-status" class="status-pill" role="status">Connecting…</span>
+            <div class="mode-switch" role="group" aria-label="Sagitta mode">
+              <button type="button" data-mode="agent" aria-pressed="true">Sagitta</button>
+              <button type="button" data-mode="direct" aria-pressed="false">Direct</button>
+            </div>
+            <button id="open-settings" class="icon-button" type="button" aria-label="Open settings">⚙</button>
+          </div>
+        </aside>
+
+        <section class="main-panel glass">
+          <div class="project-heading">
+            <div>
+              <p id="project-kicker" class="eyebrow">NO PROJECT SELECTED</p>
+              <h1 id="project-title">Select a project</h1>
+              <p id="workspace" class="workspace-path"></p>
+            </div>
+            <nav class="main-tabs" aria-label="Project view">
+              <button type="button" data-tab="interaction" aria-pressed="true">Interaction</button>
+              <button type="button" data-tab="visualization" aria-pressed="false">Visualization</button>
+            </nav>
+          </div>
+
+          <section id="interaction-tab" class="tab-panel">
+            <section class="interaction-panel">
+              <div id="messages" class="message-stream" aria-live="polite"></div>
+              <form id="chat" class="composer">
+                <textarea
+                  name="content"
+                  placeholder="Discuss this task with Sagitta…"
+                  required
+                ></textarea>
+                <button>Send</button>
+              </form>
+            </section>
+          </section>
+
+          <section id="visualization-tab" class="tab-panel" hidden>
+            <div class="visual-toolbar"><div><p class="eyebrow">PLAN STATE</p><h2>Inspectable execution readiness</h2></div></div>
+            <div id="visual-empty" class="empty-state">
+              Select or create a Plan to inspect its workflow, contracts, review, and compatibility execution state.
+            </div>
+            <section id="visual-content" hidden>
+              <div id="plan-summary" class="summary-grid"></div>
+              <section class="visual-section">
+                <div class="section-heading">
+                  <h3>Workflow</h3>
+                  <span>Phases and transitions</span>
+                </div>
+                <div id="graph" class="workflow-graph"></div>
+              </section>
+              <section class="visual-section">
+                <div class="section-heading">
+                  <h3>Phase contracts</h3>
+                  <span>Select a phase to view its contract</span>
+                </div>
+                <div id="phase-list" class="phase-list"></div>
+              </section>
+              <section class="visual-section">
+                <div class="section-heading">
+                  <h3>Plan package</h3>
+                  <span>Managed Sagitta files</span>
+                </div>
+                <div id="artifacts" class="artifact-list"></div>
+              </section>
+              <section class="visual-section">
+                <div class="section-heading">
+                  <h3>Planning timeline</h3>
+                  <span>Planning events</span>
+                </div>
+                <div id="event-timeline" class="event-timeline"></div>
+              </section>
+              <section class="visual-section">
+                <div class="section-heading">
+                  <h3>Goal compatibility</h3>
+                  <span>State of the temporary execution bridge</span>
+                </div>
+                <div id="goal-state" class="goal-state"></div>
+                <button id="export-goal" type="button" hidden>
+                  Export Codex Goal
+                </button>
+              </section>
+            </section>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <dialog id="modal" class="modal">
+      <section class="modal-card">
+        <header>
+          <div>
+            <p id="modal-kicker" class="eyebrow"></p>
+            <h2 id="modal-title"></h2>
+          </div>
+          <button
+            id="close-modal"
+            class="icon-button"
+            type="button"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </header>
+        <div id="modal-body"></div>
+      </section>
+    </dialog>
+    <script type="module" src="/assets/app.js"></script>
+  </body>
+</html>
