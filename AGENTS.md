@@ -90,6 +90,19 @@ The Task Engine is the core differentiator. It wraps coding agents (Claude Code,
    - `analyze`: write reports, read-only shell
    - `execute`: full shell, write code
 
+### Work Ownership
+
+Sagitta keeps four distinct objects:
+
+```text
+Project  = one registered operating workspace or repository
+└─ Task  = one user objective and collaboration boundary
+   ├─ Plan = selected workflow IR and contract package
+   └─ Run  = one durable execution attempt of that Plan
+```
+
+A Project can contain many Tasks. A Task owns its conversation, decisions, planning activity, and execution history. A Plan and a Run are separable operational stages of the same Task: planning can be revised, reviewed, and retained before execution; a Run can later be resumed, audited, or compared with other runs of that Task. The current implementation persists Tasks and Plans. The temporary Codex Goal bridge is not a Run implementation.
+
 ---
 
 ## Key Design Decisions
@@ -156,11 +169,15 @@ What Sagitta adds that ARIS lacks:
 - Goal temporarily applies ARIS-style registered ledger/checkpoint/outcome-gate discipline and ends at human audit, limited delivery, or blocked; it is not Sagitta's future runtime
 
 ### 3. Durable Execution
-- Plan IR → DBOS workflow compiler
-- DBOS execution runtime with deterministic output checks
+- Plan → real-time, program-owned Run state machine
+- Persisted routes, counters, worker session, heartbeat, checkpoints, evidence, and append-only event ledger
+- Deterministic output checks where contracts permit them; a DBOS compiler remains a possible backend adapter, not the definition of the runtime semantics
 
 ### 4. Sagitta Collaboration Layer
-- Persistent persona, task supervision, experience, user/project understanding
+- Persistent persona, user/project understanding, and long-form design collaboration
+- Structured experience accumulation from decisions, failures, effective checks, preferences, and outcomes
+- Run monitoring for worker health, retry exhaustion, evidence failures, and unexpected conditions; recovery remains an explicit, auditable runtime operation
+- Task-scoped project operations: clone/worktree/branch/copy preparation, handoff to a Run, and preservation or transfer of resulting work
 - Later model routing, social integration, and visual management
 
 ---
@@ -180,7 +197,7 @@ This file is the canonical design document for Sagitta-Agent. When contributing:
 - Sagitta is developed from first principles, but its authors do not need to rediscover mature solutions. Before designing or implementing a subsystem, assess mature open-source implementations and platform capabilities that solve the same bounded problem. If adopting or adapting one offers a clearer, safer, or materially lower-maintenance result than a bespoke design, explain that option and its trade-offs to the author before proceeding. Preserve Sagitta's product semantics where they are core; reuse proven infrastructure where they are not.
 - The Task Engine follows ARIS's acceptance-gate pattern (`acceptance-gate.md`): an executor can DRIVE but cannot silently change or acquit its own acceptance policy
 - The Persona Layer has high agency and may push back — this is by design, not a bug
-- Planning sessions persist at `~/.sagitta/plans/<plan-id>/`; future execution runs will persist separately at `.sagitta/runs/<run-id>.json`
+- Task conversations persist at `~/.sagitta/tasks/<task-id>/`; Plan Packages persist at `~/.sagitta/plans/<plan-id>/`; future Runs will persist separately and retain an immutable reference to their selected Plan
 - A ready planning package contains `TASK_CONTRACT.md`, one phase contract at `phases/<phase-id>.md` for every IR phase, planner-written `ir.json`, and a passing `PRELAUNCH_REVIEW.md`; every IR outcome has a matching contract-defined admission condition, while the structured planner response carries only status, summary, and questions
 - A Plan IR phase has `outputs` and `expected_facts` as business contracts; runtime state, worktrees, counters, checkpoints, and permissions are not workflow phases
 - A minimal workflow language/IR is a Phase 1 design contract; keep it small, inspectable, AI-generable, and statically validatable

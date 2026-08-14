@@ -87,6 +87,24 @@ The Task Engine is one of Sagitta's two cores. It wraps coding agents (Claude Co
 3. **Future Provider Router** — the durable runtime may later route phases to different executors; the current Goal bridge has no execution-model orchestration and runs entirely in the Codex App model selected by the user
 4. **Permission Gate** — three-tier progressive permissions: `minimal` / `analyze` / `execute`
 
+### Work ownership: Project, Task, Plan, Run
+
+Sagitta uses four deliberately different objects. Keeping them separate is what lets a natural-language collaboration become a recoverable overnight process without turning a planning artifact into the runtime itself.
+
+```text
+Project  = one registered operating workspace or repository
+└─ Task  = one user objective and its collaboration boundary
+   ├─ Plan = the selected, inspectable workflow and contract package
+   └─ Run  = one concrete attempt to execute that Plan
+```
+
+- A **Project** supplies the operating context. It can contain many independent Tasks.
+- A **Task** owns the conversation, user decisions, planner activity, and eventual execution history for one objective.
+- A **Plan** is the Task's selected planning result: its IR, task contract, phase contracts, and launch review. Planning and execution are separable in practice, so a Task may be discussed or planned for a long time before any Run starts.
+- A **Run** is a durable, observable execution of a selected Plan. It owns the current phase, route decision, counters, executor session, checkpoint, heartbeat, evidence, and append-only event ledger. A Task may eventually retain several Runs of the same or revised Plan.
+
+The current console persists Task conversations and Plan packages. The Run model is the next runtime boundary; the temporary Codex Goal is a compatibility bridge, not a Run implementation.
+
 ---
 
 ## Key Design Decisions
@@ -105,11 +123,20 @@ The Task Engine is one of Sagitta's two cores. It wraps coding agents (Claude Co
 |-------|-------|--------|
 | 1 | NL → inspected Plan Package + validated Plan IR | Implemented planning core |
 | 2 | Plan IR → paste-ready Codex Goal | Implemented temporary compatibility bridge |
-| 3 | Plan IR → DBOS workflow compiler | Planned |
-| 4 | DBOS-backed execution runtime and deterministic output checks | Planned |
+| 3 | Task Plan → durable, real-time program state-machine Run | Planned |
+| 4 | Run persistence, deterministic checks, and a backend adapter (including a possible DBOS compiler) | Planned |
 | 5 | Sagitta as the persistent persona and task-management assistant | Planned |
 
-Cross-model routing, richer permissions, memory retrieval, social integrations, and visual management follow after a usable execution path exists. Today only Plan Package authoring and its fresh pre-launch review are fixed to `gpt-5.6-sol` with high reasoning effort; Goal execution does not select or switch models.
+The runtime semantics come before selecting a durable backend: Plan IR routing, Run state, counters, evidence, resume, and allowed operations must stay testable independently of DBOS or another engine. Cross-model routing, richer permissions, memory retrieval, social integrations, and visual management follow after a usable execution path exists. Today only Plan Package authoring and its fresh pre-launch review are fixed to `gpt-5.6-sol` with high reasoning effort; Goal execution does not select or switch models.
+
+### Long-term collaboration capabilities
+
+Sagitta's later collaboration layer has four connected responsibilities:
+
+1. **Real-time overnight execution** — a program-owned Run state machine advances only through recorded routes and gate decisions, retains heartbeats and checkpoints, and can resume after interruption.
+2. **Experience accumulation** — after-action experience records first capture decisions, failures, effective checks, preferences, and outcomes. Retrieval can grow from this structured base instead of treating an unbounded chat transcript as memory.
+3. **Run monitoring and maintenance** — Sagitta observes run events, executor health, retry exhaustion, evidence failures, and unexpected project conditions. It may diagnose or propose a bounded recovery; the runtime performs only explicitly permitted, auditable operations.
+4. **Project operations and ongoing collaboration** — Sagitta can treat a long task as an atomic project operation: prepare a clone/worktree/branch, hand it to a Run, preserve or move the resulting work, and retain context for continuing design conversations. Its initiative remains visible and bounded by the Task's authority.
 
 ---
 
@@ -194,7 +221,7 @@ Open `http://127.0.0.1:8123`. Set `SAGITTA_HOST` and `SAGITTA_PORT` only when an
 
 Use the local settings button to configure the collaboration model, OpenAI-compatible base URL, API key, and Profile. The API key is kept in an owner-only file under `~/.sagitta/`, is never returned by the API, and may also be supplied through `DEEPSEEK_API_KEY` as an environment fallback.
 
-The console uses a Finder directory picker to register existing local projects and automatically selects the first available project when it opens. A Project is only a workspace; each **Task** owns an isolated conversation, Codex activity stream, Plan package, IR, Goal export, and future execution records. Its two main views are **Interaction** and **Visualization**. In **Sagitta** mode, natural language goes through the persistent PydanticAI collaboration agent; in **Direct** mode, the same Task conversation is routed directly to the Codex planner. The Visualization view renders the selected Task's Plan graph, phase contracts, package files, review, Q&A, and transitional Goal state. Goal remains a manual compatibility bridge: this MVP does not supervise a Goal run, receive real-time Goal events, interrupt Codex, or implement the future DBOS runtime.
+The console uses a Finder directory picker to register existing local projects and automatically selects the first available project when it opens. A Project is only a workspace; each **Task** owns an isolated conversation, Codex activity stream, and the lifecycle around one objective. Its current Plan artifacts are the package, IR, review, and Goal export; a future Run will supply separate execution records. Its two main views are **Interaction** and **Visualization**. In **Sagitta** mode, natural language goes through the persistent PydanticAI collaboration agent; in **Direct** mode, the same Task conversation is routed directly to the Codex planner. The Visualization view renders the selected Task's Plan graph, phase contracts, package files, review, Q&A, and transitional Goal state. Goal remains a manual compatibility bridge: this MVP does not supervise a Goal run, receive real-time Goal events, interrupt Codex, or implement the future program-owned runtime.
 
 Profile is editable in Settings and stored at `~/.sagitta/profile.md`; Task conversation and PydanticAI message history live together under `~/.sagitta/tasks/<task-id>/`. This makes switching between Sagitta and Direct a routing choice rather than a context change. See [the implementation map](docs/assistant-mvp.md) for state ownership and API details.
 
