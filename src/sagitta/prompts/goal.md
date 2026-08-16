@@ -50,7 +50,11 @@ The task contract is the source of truth for the task objective, trusted inputs,
 ### Navigation and limits
 
 9. Treat time budgets as upper working limits, not completion evidence. Reaching a budget requires reconciliation and the contract-defined timeout/failure route; finishing quickly is valid only when every admission condition is already proved. Do not consume time without information gain.
-10. Counter semantics: every node has a workflow-wide entry count. Each scope instance has entry counts for its direct children. A phase's direct-self-retry count increases only when it transitions directly to itself; entering it from any other node resets that count to zero. Evaluate conditional routes in their listed order and use the final fallback when none matches. Record counter changes before entering the target.
+10. Counter semantics: every phase has a workflow-wide entry count. A phase's bare direct-self-retry count increases only when it transitions directly to itself; an entry from another phase resets that bare consecutive count. A windowed entry count or retry count means “since the most recent entry to its named anchor phase.” When entering an anchor, first reset every tracked window anchored there, then record the new phase entry; a windowed retry count increases only on its named phase's direct self-transition and otherwise remains accumulated until its anchor is entered again. Keep the following counters explicitly in state and the checkpoint:
+
+{{COUNTER_TRACKING}}
+
+Evaluate conditional routes in their listed order and use the final fallback when none matches. Record counter changes before entering the target.
 
 ### Closure
 

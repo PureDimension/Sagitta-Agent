@@ -165,41 +165,31 @@ def _ir_graph(workflow: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]
     nodes: list[dict[str, Any]] = []
     edges: list[dict[str, Any]] = []
 
-    def visit(items: list[dict[str, Any]], parent: str | None = None) -> None:
-        for item in items:
-            node_id = item.get("id")
-            if not isinstance(node_id, str):
-                continue
-            node = {
-                "id": node_id,
-                "type": item.get("type"),
-                "title": item.get("title", node_id),
-                "kind": item.get("kind"),
-                "parent": parent,
-                "objective": item.get("objective"),
-                "outputs": item.get("outputs", []),
-                "expected_facts": item.get("expected_facts", []),
-                "outcomes": list(item.get("on", {})) if isinstance(item.get("on"), dict) else [],
-            }
-            nodes.append(node)
-            if item.get("type") == "scope":
-                entry = item.get("entry_phase")
-                if isinstance(entry, str):
-                    edges.append({"from": node_id, "to": entry, "label": "entry"})
-                children = item.get("phases")
-                if isinstance(children, list):
-                    visit(children, node_id)
-                continue
-            for outcome, route in (item.get("on") or {}).items():
-                routes = [route] if isinstance(route, str) else route if isinstance(route, list) else []
-                for choice in routes:
-                    target = choice if isinstance(choice, str) else choice.get("target") if isinstance(choice, dict) else None
-                    if isinstance(target, str) and target != "$complete":
-                        edges.append({"from": node_id, "to": target, "label": outcome})
-
     phases = workflow.get("phases")
-    if isinstance(phases, list):
-        visit(phases)
+    if not isinstance(phases, list):
+        return {"nodes": nodes, "edges": edges}
+    for phase in phases:
+        phase_id = phase.get("id")
+        if not isinstance(phase_id, str):
+            continue
+        nodes.append(
+            {
+                "id": phase_id,
+                "type": "phase",
+                "title": phase.get("title", phase_id),
+                "kind": phase.get("kind"),
+                "objective": phase.get("objective"),
+                "outputs": phase.get("outputs", []),
+                "expected_facts": phase.get("expected_facts", []),
+                "outcomes": list(phase.get("on", {})) if isinstance(phase.get("on"), dict) else [],
+            }
+        )
+        for outcome, route in (phase.get("on") or {}).items():
+            routes = [route] if isinstance(route, str) else route if isinstance(route, list) else []
+            for choice in routes:
+                target = choice if isinstance(choice, str) else choice.get("target") if isinstance(choice, dict) else None
+                if isinstance(target, str) and target != "$complete":
+                    edges.append({"from": phase_id, "to": target, "label": outcome})
     return {"nodes": nodes, "edges": edges}
 
 

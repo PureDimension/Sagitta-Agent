@@ -31,6 +31,7 @@ let activityTaskId = null;
 let activityEvents = [];
 let activityPoller = null;
 let activityPollPending = false;
+let submittedPlannerRound = null;
 const contextNotices = new Map();
 const modal = $("#modal");
 
@@ -301,10 +302,10 @@ function renderCodexActivity(root) {
   if (!activePlan || (!observesActivity(activePlan) && !activityEvents.length)) return;
   const card = message(root, "assistant", "", "executor-activity");
   const body = card.lastElementChild;
-  add(body, "div", "Sagitta delegated workspace planning to Codex.", "activity-intro");
+  add(body, "div", submittingAnswers ? "Codex is resuming the same planning session." : "Sagitta delegated workspace planning to Codex.", "activity-intro");
   const details = document.createElement("details");
   details.className = "activity-details";
-  const phase = activePlan.status === "needs_input" ? "waiting for your answers" : "working";
+  const phase = submittingAnswers ? "resuming" : activePlan.status === "needs_input" ? "waiting for your answers" : "working";
   add(details, "summary", `Codex · ${phase} · ${activityEvents.length} activities`);
   const rows = add(details, "div", "", "activity-rows");
   activityEvents.forEach((activity) => {
@@ -316,15 +317,58 @@ function renderCodexActivity(root) {
   });
   body.append(details);
 }
+function questionsMatch(left, right) {
+  const ids = (questions) => Array.isArray(questions) ? questions.map((item) => item?.id).filter(Boolean).join("|") : "";
+  return ids(left) && ids(left) === ids(right);
+}
+function isCurrentPlannerMessage(entry) {
+  const metadata = entry.metadata || {};
+  return mode === "direct" && metadata.kind === "planner_round" && activePlan?.status === "needs_input" && questionsMatch(metadata.questions, activePlan.response?.questions);
+}
+function appendPlannerQuestion(group, question, answer = null) {
+  const wrap = add(group, "div", "", "planner-question");
+  add(wrap, "span", "Question", "planner-label");
+  add(wrap, "p", question.question || "Untitled question");
+  if (question.reason) add(wrap, "small", question.reason);
+  if (answer !== null) {
+    add(wrap, "span", "Your answer", "planner-label");
+    add(wrap, "div", answer, "planner-answer");
+  }
+  return wrap;
+}
+function renderPlannerHistory(root, entry) {
+  const metadata = entry.metadata || {};
+  if (metadata.kind === "planner_round" && Array.isArray(metadata.questions)) {
+    const card = message(root, "assistant", entry.content, "planner", { route: "direct" });
+    const group = add(card, "div", "", "planner-history");
+    metadata.questions.forEach((question) => appendPlannerQuestion(group, question));
+    return true;
+  }
+  if (metadata.kind === "planner_answers" && Array.isArray(metadata.answers)) {
+    const card = message(root, "user", "", "planner-answers", { route: "direct" });
+    const group = add(card, "div", "", "planner-history");
+    metadata.answers.forEach((answer) => appendPlannerQuestion(group, answer, answer.answer));
+    return true;
+  }
+  return false;
+}
 function renderPlannerRound(root) {
   const questions = activePlan?.response?.questions;
   if (mode !== "direct" || activePlan?.status !== "needs_input" || !Array.isArray(questions) || !questions.length) return;
+  if (submittedPlannerRound?.taskId === activeTask?.id && submittedPlannerRound?.planId === activePlan?.id) {
+    const card = message(root, "assistant", "Decision round submitted.", "planner", { route: "direct" });
+    const group = add(card, "div", "", "planner-history");
+    const answers = new Map(submittedPlannerRound.answers.map((item) => [item.id, item.answer]));
+    submittedPlannerRound.questions.forEach((question) => appendPlannerQuestion(group, question, answers.get(question.id) || ""));
+    return;
+  }
   const card = message(root, "assistant", `This round has ${questions.length} decisions to settle before offline execution.`, "planner", { route: "direct" });
   const form = document.createElement("form");
   form.className = "planner-round";
   questions.forEach((question) => {
     const wrap = document.createElement("label");
     wrap.className = "planner-question";
+    add(wrap, "span", "Question", "planner-label");
     add(wrap, "p", question.question);
     add(wrap, "small", question.reason);
     const input = document.createElement("textarea");
@@ -344,12 +388,15 @@ function renderPlannerRound(root) {
     if (submittingAnswers || !activeTask) return;
     const answers = [...form.querySelectorAll("textarea")].map((input) => ({ id: input.dataset.questionId, answer: input.value.trim() }));
     if (answers.some((item) => !item.answer)) return notice("Answer every question in this round, or switch to Sagitta to discuss the trade-offs.");
+    submittedPlannerRound = { taskId: activeTask.id, planId: activePlan.id, questions: questions.map((question) => ({ ...question })), answers };
     submittingAnswers = true;
     renderInteraction();
     try {
       await api(`/api/projects/${selected}/tasks/${activeTask.id}/answers`, jsonOptions({ answers }));
+      submittedPlannerRound = null;
       await loadProject();
     } catch (error) {
+      submittedPlannerRound = null;
       notice(error.message);
     } finally {
       submittingAnswers = false;
@@ -368,10 +415,13 @@ function renderThread() {
   if (!activeTask) return add(root, "p", "Use + beside a project to create an isolated task.", "empty-state");
   const messages = activeTask.messages || [];
   if (!messages.length) add(root, "p", "Start this task with Sagitta, or switch to Direct to create its Plan.", "empty-state");
-  messages.forEach((entry) => message(root, entry.role, entry.content, "", entry.metadata || {}));
+  messages.forEach((entry) => {
+    if (isCurrentPlannerMessage(entry)) return;
+    if (!renderPlannerHistory(root, entry)) message(root, entry.role, entry.content, "", entry.metadata || {});
+  });
   (contextNotices.get(taskKey()) || []).forEach((entry) => message(root, "notice", entry.content, "context-notice"));
-  renderCodexActivity(root);
   renderPlannerRound(root);
+  renderCodexActivity(root);
 }
 function renderComposer() {
   const form = $("#chat");

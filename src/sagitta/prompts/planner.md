@@ -145,7 +145,7 @@ Every `phase` has exactly these fields:
 - `expected_facts`: non-empty array describing facts that should be confirmable after it finishes; these are expected postconditions, not facts already established
 - `on`: task-specific outcome-to-target routing
 
-`on` maps an outcome to the next target. Outcome names are task-specific: choose names that distinguish meaningful observed results. Every outcome must have a matching subsection in that phase's `## Outcome conditions`. A target names another node or `$complete`. Use only phase kinds `explore`, `design`, `implement`, `test`, and `review`.
+`on` maps an outcome to the next target. Outcome names are task-specific: choose names that distinguish meaningful observed results. Every outcome must have a matching subsection in that phase's `## Outcome conditions`. A target names another phase or `$complete`. Use only phase kinds `explore`, `design`, `implement`, `test`, and `review`.
 
 The runtime, not this IR, owns worktrees, permissions, checkpoints, counters, logs, heartbeats, resource handling, and internal execution status. Do not create workflow phases merely to establish a control plane, write generic runtime state, or manage retries. A phase should describe only the user's work.
 
@@ -160,16 +160,18 @@ The runtime, not this IR, owns worktrees, permissions, checkpoints, counters, lo
 - Resolve material user decisions during planning. A ready workflow must never wait for a user or business approval. If later approval is required to activate an artifact, record its unapproved state, complete all independent work, and end with an explicit limitation or failure record rather than leaving work pending or inventing success.
 - Design the final review/closure phase as a real acceptance gate. Its successful route requires reconciled evidence for the entire task contract; gaps route to a bounded repair, a truthful limited result, or a blocked result. Passing executor-authored tests and writing documentation alone must never imply task acceptance.
 
-## Conditional navigation and scopes
+## Conditional navigation and counters
 
 An `on` outcome may hold an ordered array of routes instead of one target. Each conditional route has `when` and `target`; the final route has only `target` and is the required default. Conditions support only runtime counters, integer comparisons (`<`, `<=`, `>`, `>=`, `==`, `!=`), Python-style `and` and `or`, and parentheses. Do not use arithmetic, assignments, function calls, or quoted strings.
 
-Use a `scope` only for real hierarchy or a bounded nested loop. A scope has exactly `type: "scope"`, `id`, `entry_phase`, and child `phases`. Entering a scope opens a local counting window. Targeting its ID enters its entry phase again.
+The graph is flat: `phases` contains only `type: "phase"` objects. There are no `scope` objects and a route never targets a container. Use phase IDs to express every navigation edge. Counters are the sole compact control mechanism:
 
-- `$phase.retry` counts only **direct self-retries**: this phase must route directly back to itself for that counter to increase. Any entry from a different phase resets it to zero. Use it only for a self-call loop.
-- For a repair path that moves through another phase (for example, `verify_change → implement_change → verify_change`), never use `$verify_change.retry`: use `$workflow.verify_change` or an active scope's direct-child counter to bound repeated entries instead.
-- `$scope.child` is the number of times direct child `child` has been entered during the current scope instance.
-- `$workflow.child` is the number of times that node has been entered across the workflow.
+- `$phase.entercount` is the total number of times that phase has been entered in this workflow Run.
+- `$phase.retrycount` is the current phase's consecutive direct self-retry count. It increases only on `phase → same phase`; a later entry from another phase resets it. Use it only from that phase's own `on` conditions.
+- `$phase.entercount.after.anchor` is the number of times `phase` has been entered since the most recent entry to `anchor`.
+- `$phase.retrycount.after.anchor` is the number of direct self-retries of `phase` since the most recent entry to `anchor`. It resets when `anchor` is entered, so it can bound retries across a larger loop.
+
+`after.anchor` means **since entering** the anchor phase, not after the anchor phase completes. It gives a real work phase the role of a local reset point; never create a synthetic phase solely to reset a counter. Both `phase` and `anchor` must be actual phase IDs. For a repair path that moves through another phase (for example, `verify_change → implement_change → verify_change`), use an entry count, usually `$verify_change.entercount` or `$verify_change.entercount.after.inspect`, rather than a retry count.
 
 The planning agent writes these conditions; the later runtime holds and evaluates their values. The executor does not need to receive current counter values unless the current business objective requires them.
 
@@ -177,7 +179,7 @@ The planning agent writes these conditions; the later runtime holds and evaluate
 
 Before returning `ready`, write the following kind of object directly to `{{PLAN_DIRECTORY}}/ir.json`. Follow these field names exactly; do not replace `entry_phase`/`phases` with graph synonyms such as `entry`/`nodes`.
 
-The verification repair path below passes through `implement_change`, so it uses the workflow-wide entry count for `verify_change`, not that phase's direct self-retry count.
+The verification repair path below passes through `implement_change`, so it uses an entry-count window anchored at `inspect`, not `verify_change`'s direct self-retry count. The self-inspection loop separately shows the only valid use of a bare retry count.
 
 ```json
 {
@@ -199,42 +201,41 @@ The verification repair path below passes through `implement_change`, so it uses
       "outputs": ["A task-boundary note with relevant source and test locations."],
       "expected_facts": ["The existing behavior and verification entry point are identified."],
       "timeout_seconds": 900,
-      "on": {"boundary_confirmed": "change_attempt"}
+      "on": {
+        "boundary_confirmed": "implement_change",
+        "inspection_incomplete": [
+          {"when": "$inspect.retrycount < 2", "target": "inspect"},
+          {"target": "close"}
+        ]
+      }
     },
     {
-      "type": "scope",
-      "id": "change_attempt",
-      "entry_phase": "implement_change",
-      "phases": [
-        {
-          "type": "phase",
-          "id": "implement_change",
-          "title": "Implement the bounded change",
-          "kind": "implement",
-          "objective": "Implement the confirmed change while preserving the inspected project boundary.",
-          "outputs": ["The source change required by the task."],
-          "expected_facts": ["The intended code path has an implementation candidate."],
-          "timeout_seconds": 1800,
-          "on": {"implementation_ready": "verify_change", "approach_invalid": "close"}
-        },
-        {
-          "type": "phase",
-          "id": "verify_change",
-          "title": "Run focused verification",
-          "kind": "test",
-          "objective": "Run the relevant automated verification and collect its direct output.",
-          "outputs": ["Focused test output or another deterministic verification record."],
-          "expected_facts": ["The verification result is recorded and attributable to the current change."],
-          "timeout_seconds": 1200,
-          "on": {
-            "verification_passed": "close",
-            "needs_repair": [
-              {"when": "$workflow.verify_change < 2", "target": "implement_change"},
-              {"target": "close"}
-            ]
-          }
-        }
-      ]
+      "type": "phase",
+      "id": "implement_change",
+      "title": "Implement the bounded change",
+      "kind": "implement",
+      "objective": "Implement the confirmed change while preserving the inspected project boundary.",
+      "outputs": ["The source change required by the task."],
+      "expected_facts": ["The intended code path has an implementation candidate."],
+      "timeout_seconds": 1800,
+      "on": {"implementation_ready": "verify_change", "approach_invalid": "close"}
+    },
+    {
+      "type": "phase",
+      "id": "verify_change",
+      "title": "Run focused verification",
+      "kind": "test",
+      "objective": "Run the relevant automated verification and collect its direct output.",
+      "outputs": ["Focused test output or another deterministic verification record."],
+      "expected_facts": ["The verification result is recorded and attributable to the current change."],
+      "timeout_seconds": 1200,
+      "on": {
+        "verification_passed": "close",
+        "needs_repair": [
+          {"when": "$verify_change.entercount.after.inspect < 3", "target": "implement_change"},
+          {"target": "close"}
+        ]
+      }
     },
     {
       "type": "phase",

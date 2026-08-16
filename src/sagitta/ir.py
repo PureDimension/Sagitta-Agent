@@ -1,4 +1,4 @@
-"""Validation for Sagitta planning responses and hierarchical workflow IR."""
+"""Validation for Sagitta planning responses and flat workflow IR."""
 
 from __future__ import annotations
 
@@ -31,36 +31,29 @@ PHASE_FIELDS = {
     "timeout_seconds",
     "on",
 }
-SCOPE_FIELDS = {"type", "id", "entry_phase", "phases"}
 ROUTE_FIELDS = {"target"}
 CONDITIONAL_ROUTE_FIELDS = {"when", "target"}
 CONDITION_TOKEN = re.compile(
     r"\s*("
-    r"\$[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?"
+    r"\$[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*){1,3}"
     r"|\d+"
     r"|<=|>=|==|!=|<|>"
     r"|\(|\)"
     r"|and\b|or\b"
     r")"
 )
-VARIABLE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?$")
+VARIABLE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*)){1,3}$")
 
 
 @dataclass(frozen=True)
 class Node:
-    """One validated workflow node and its hierarchical location."""
+    """One validated executable phase."""
 
     node: dict[str, Any]
-    parent: str
 
     @property
     def id(self) -> str:
         return self.node["id"]
-
-    @property
-    def type(self) -> str:
-        return self.node["type"]
-
 
 def _nonempty_string(value: Any, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
@@ -123,80 +116,53 @@ def validate_workflow(workflow: Any) -> dict[str, Any]:
     if not isinstance(assumptions, list) or any(not isinstance(item, str) or not item.strip() for item in assumptions):
         raise ValidationError("assumptions must be an array of non-empty strings")
 
-    nodes = list(_collect_nodes(workflow.get("phases"), parent="$workflow", location="phases"))
+    nodes = list(_collect_nodes(workflow.get("phases"), location="phases"))
     by_id = {node.id: node for node in nodes}
-    _validate_entry(workflow["entry_phase"], "$workflow", by_id, "workflow.entry_phase")
+    _validate_entry(workflow["entry_phase"], by_id, "workflow.entry_phase")
     for node in nodes:
-        if node.type == "scope":
-            _validate_entry(node.node["entry_phase"], node.id, by_id, f"scope {node.id}.entry_phase")
-
-    for node in nodes:
-        if node.type == "phase":
-            _validate_on(node, by_id)
+        _validate_on(node, by_id)
 
     _validate_reachability(workflow["entry_phase"], by_id)
     return workflow
 
 
-def _collect_nodes(value: Any, parent: str, location: str) -> Iterator[Node]:
+def _collect_nodes(value: Any, location: str) -> Iterator[Node]:
     if not isinstance(value, list) or not value:
         raise ValidationError(f"{location} must be a non-empty array")
-    seen_here: set[str] = set()
+    seen: set[str] = set()
     for index, raw in enumerate(value):
         node_location = f"{location}[{index}]"
         if not isinstance(raw, dict):
             raise ValidationError(f"{node_location} must be an object")
         node_type = raw.get("type")
-        if node_type == "phase":
-            if set(raw) != PHASE_FIELDS:
-                raise ValidationError(f"{node_location} phase fields must be exactly {sorted(PHASE_FIELDS)}")
-            _nonempty_string(raw.get("id"), f"{node_location}.id")
-            _nonempty_string(raw.get("title"), f"{node_location}.title")
-            _nonempty_string(raw.get("objective"), f"{node_location}.objective")
-            _nonempty_string_list(raw.get("outputs"), f"{node_location}.outputs")
-            _nonempty_string_list(raw.get("expected_facts"), f"{node_location}.expected_facts")
-            if raw.get("kind") not in PHASE_KINDS:
-                raise ValidationError(f"{node_location}.kind must be one of {sorted(PHASE_KINDS)}")
-            timeout = raw.get("timeout_seconds")
-            if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
-                raise ValidationError(f"{node_location}.timeout_seconds must be a positive integer")
-            if not isinstance(raw.get("on"), dict) or not raw["on"]:
-                raise ValidationError(f"{node_location}.on must be a non-empty object")
-        elif node_type == "scope":
-            if set(raw) != SCOPE_FIELDS:
-                raise ValidationError(f"{node_location} scope fields must be exactly {sorted(SCOPE_FIELDS)}")
-            _nonempty_string(raw.get("id"), f"{node_location}.id")
-            _nonempty_string(raw.get("entry_phase"), f"{node_location}.entry_phase")
-        else:
-            raise ValidationError(f"{node_location}.type must be phase or scope")
+        if node_type != "phase":
+            raise ValidationError(f"{node_location}.type must be phase")
+        if set(raw) != PHASE_FIELDS:
+            raise ValidationError(f"{node_location} phase fields must be exactly {sorted(PHASE_FIELDS)}")
+        _nonempty_string(raw.get("id"), f"{node_location}.id")
+        _nonempty_string(raw.get("title"), f"{node_location}.title")
+        _nonempty_string(raw.get("objective"), f"{node_location}.objective")
+        _nonempty_string_list(raw.get("outputs"), f"{node_location}.outputs")
+        _nonempty_string_list(raw.get("expected_facts"), f"{node_location}.expected_facts")
+        if raw.get("kind") not in PHASE_KINDS:
+            raise ValidationError(f"{node_location}.kind must be one of {sorted(PHASE_KINDS)}")
+        timeout = raw.get("timeout_seconds")
+        if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
+            raise ValidationError(f"{node_location}.timeout_seconds must be a positive integer")
+        if not isinstance(raw.get("on"), dict) or not raw["on"]:
+            raise ValidationError(f"{node_location}.on must be a non-empty object")
 
         node_id = raw["id"]
-        if node_id in seen_here:
-            raise ValidationError(f"duplicate node id among {parent} children: {node_id}")
-        seen_here.add(node_id)
-        yield Node(raw, parent)
-        if node_type == "scope":
-            yield from _collect_nodes(raw["phases"], parent=node_id, location=f"{node_location}.phases")
-
-    all_ids = [node["id"] for node in _flatten_for_duplicates(value)]
-    if len(all_ids) != len(set(all_ids)):
-        duplicates = sorted({node_id for node_id in all_ids if all_ids.count(node_id) > 1})
-        raise ValidationError(f"node ids must be globally unique: {duplicates}")
+        if node_id in seen:
+            raise ValidationError(f"phase ids must be globally unique: {node_id}")
+        seen.add(node_id)
+        yield Node(raw)
 
 
-def _flatten_for_duplicates(value: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
-    for node in value:
-        yield node
-        if node.get("type") == "scope" and isinstance(node.get("phases"), list):
-            yield from _flatten_for_duplicates(node["phases"])
-
-
-def _validate_entry(entry: str, parent: str, by_id: dict[str, Node], name: str) -> None:
+def _validate_entry(entry: str, by_id: dict[str, Node], name: str) -> None:
     node = by_id.get(entry)
     if node is None:
         raise ValidationError(f"{name} points to an unknown node: {entry}")
-    if node.parent != parent:
-        raise ValidationError(f"{name} must point to a direct child of {parent}")
 
 
 def _validate_on(node: Node, by_id: dict[str, Node]) -> None:
@@ -317,37 +283,27 @@ class _ConditionParser:
 
 
 def _validate_variable(variable: str, phase: Node, by_id: dict[str, Node], location: str) -> None:
-    match = VARIABLE.fullmatch(variable)
-    if match is None:
+    if VARIABLE.fullmatch(variable) is None:
         raise ValidationError(f"{location}.when has an invalid counter reference: {variable}")
-    scope_or_phase, child_or_metric = match.groups()
-    if child_or_metric is None:
-        raise ValidationError(f"{location}.when counter references require a dotted name")
-    if scope_or_phase == phase.id:
-        if child_or_metric != "retry":
-            raise ValidationError(f"{location}.when only supports ${phase.id}.retry for the current phase")
-        return
-    if scope_or_phase == "workflow":
-        if child_or_metric not in by_id:
-            raise ValidationError(f"{location}.when references an unknown workflow node: {child_or_metric}")
-        return
-    scope = by_id.get(scope_or_phase)
-    if scope is None or scope.type != "scope":
-        raise ValidationError(f"{location}.when references an unknown scope: {scope_or_phase}")
-    if scope.id not in _ancestor_scopes(phase, by_id):
-        raise ValidationError(f"{location}.when scope {scope.id} is not active for phase {phase.id}")
-    child = by_id.get(child_or_metric)
-    if child is None or child.parent != scope.id:
-        raise ValidationError(f"{location}.when {scope.id}.{child_or_metric} must name a direct child node")
-
-
-def _ancestor_scopes(node: Node, by_id: dict[str, Node]) -> set[str]:
-    ancestors: set[str] = set()
-    parent = node.parent
-    while parent != "$workflow":
-        ancestors.add(parent)
-        parent = by_id[parent].parent
-    return ancestors
+    parts = variable[1:].split(".")
+    phase_id, metric = parts[:2]
+    if phase_id not in by_id:
+        raise ValidationError(f"{location}.when references an unknown phase: {phase_id}")
+    if metric not in {"entercount", "retrycount"}:
+        raise ValidationError(f"{location}.when counter metric must be entercount or retrycount")
+    if len(parts) == 2:
+        pass
+    elif len(parts) == 4 and parts[2] == "after":
+        anchor_phase = parts[3]
+        if anchor_phase not in by_id:
+            raise ValidationError(f"{location}.when references an unknown anchor phase: {anchor_phase}")
+    else:
+        raise ValidationError(
+            f"{location}.when counter must be $phase.entercount, $phase.retrycount, "
+            "or either form followed by .after.anchor_phase"
+        )
+    if metric == "retrycount" and phase_id != phase.id:
+        raise ValidationError(f"{location}.when retrycount may only reference the current phase {phase.id}")
 
 
 def _validate_reachability(entry: str, by_id: dict[str, Node]) -> None:
@@ -360,9 +316,6 @@ def _validate_reachability(entry: str, by_id: dict[str, Node]) -> None:
             continue
         reached.add(current)
         node = by_id[current]
-        if node.type == "scope":
-            pending.append(node.node["entry_phase"])
-            continue
         for route in node.node["on"].values():
             targets = [route] if isinstance(route, str) else [item["target"] for item in route]
             for target in targets:
@@ -372,6 +325,6 @@ def _validate_reachability(entry: str, by_id: dict[str, Node]) -> None:
                     pending.append(target)
     if set(by_id) != reached:
         missing = sorted(set(by_id) - reached)
-        raise ValidationError(f"v2 workflow has nodes unreachable from entry_phase: {missing}")
+        raise ValidationError(f"workflow has phases unreachable from entry_phase: {missing}")
     if not complete_reached:
-        raise ValidationError("v2 workflow has no path to $complete")
+        raise ValidationError("workflow has no path to $complete")

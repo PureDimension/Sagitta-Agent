@@ -147,7 +147,7 @@ Sagitta's later collaboration layer has four connected responsibilities:
 
 ## Planning MVP
 
-The first runnable slice is deliberately narrow: natural language → Codex workspace inspection → a planner-written Plan Package and hierarchical Plan IR → fresh read-only pre-launch review with one bounded planner revision → a manual Goal export. Sagitta itself does not execute phases yet; the user manually starts the exported Goal in Codex App.
+The first runnable slice is deliberately narrow: natural language → Codex workspace inspection → a planner-written Plan Package and flat Plan IR → fresh read-only pre-launch review with one bounded planner revision → a manual Goal export. Sagitta itself does not execute phases yet; the user manually starts the exported Goal in Codex App.
 
 ```bash
 python3 -m venv .venv
@@ -172,7 +172,7 @@ sagitta goal <run-id>
 
 Prompts are regular editable files under `src/sagitta/prompts/`. `planner.md` includes the canonical IR few-shot, ARIS-style contract example, and mandatory per-outcome admission conditions. `prelaunch_review.md` reviews the complete package for uncovered requirements, fakeable gates, and invalid terminal paths. `goal.md` compiles the reviewed package into the temporary deterministic Goal protocol. `phase_executor.md` records a later execution rule for the durable runtime.
 
-The IR starts with ordinary `phase` nodes. Every phase declares its business `outputs` and `expected_facts`, then uses `on` to route task-specific outcomes to their next target. These contracts make completion inspectable without forcing a universal outcome vocabulary. Nested `scope` nodes are optional: use them only for real hierarchical work or bounded nested loops. Runtime will later maintain scope-local and workflow-wide entry counters, which conditional `on` routes can read with expressions such as `$major.minor < 3 and $workflow.minor < 8`. A phase's `.retry` counter is strictly for a direct transition back to that same phase; a repair cycle that travels through another phase must use a scope or workflow entry counter.
+The IR is a flat graph of ordinary `phase` nodes. Every phase declares its business `outputs` and `expected_facts`, then uses `on` to route task-specific outcomes to another phase or `$complete`. These contracts make completion inspectable without forcing a universal outcome vocabulary. Conditional routes use total phase entry counts (`$phase.entercount`), direct self-retry counts (`$phase.retrycount`), or an entry/retry count since a real anchor phase was most recently entered (`$phase.entercount.after.anchor` and `$phase.retrycount.after.anchor`). The anchor gives a bounded loop a clear reset point without introducing a container node or synthetic control phase.
 
 Each planning session is durable and inspectable under `~/.sagitta/plans/<plan-id>/`:
 

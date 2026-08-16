@@ -135,6 +135,33 @@ class CollaborationTests(unittest.TestCase):
             self.assertEqual(codex.started_workspace.resolve(), workspace.resolve())
             self.assertEqual(store.task(project["id"], task["id"])["plan"]["id"], result["id"])
 
+    def test_task_planner_transcript_keeps_structured_question_and_answer_rounds(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "project"
+            workspace.mkdir()
+            store = CollaborationStore(root / "home")
+            project = store.register_workspace(workspace)
+            task = store.create_task(project["id"], "Task")
+            service = AssistantService(store, FakeCodex())  # type: ignore[arg-type]
+
+            service.start_task_codex_planning(project["id"], task["id"], "Plan it")
+            started_messages = store.task_messages(project["id"], task["id"])
+            question_round = started_messages[-1]
+            self.assertEqual(question_round["metadata"]["kind"], "planner_round")
+            self.assertEqual(question_round["metadata"]["questions"][0]["id"], "format")
+
+            service.submit_task_planner_answers(
+                project["id"],
+                task["id"],
+                [{"id": "format", "answer": "JSON"}, {"id": "overwrite", "answer": "No"}],
+            )
+            completed_messages = store.task_messages(project["id"], task["id"])
+            answer_round = completed_messages[-2]
+            self.assertEqual(answer_round["metadata"]["kind"], "planner_answers")
+            self.assertEqual(answer_round["metadata"]["answers"][0]["question"], "Which input format?")
+            self.assertEqual(answer_round["metadata"]["answers"][1]["answer"], "No")
+
     def test_duplicate_batch_is_rejected_while_the_first_resume_owns_the_plan(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -424,7 +451,7 @@ class WebConsoleTests(unittest.TestCase):
 
     def test_presentation_graph_keeps_only_whitelisted_fields(self) -> None:
         graph = _ir_graph(workflow())
-        self.assertEqual(set(graph["nodes"][0]), {"id", "type", "title", "kind", "parent", "objective", "outputs", "expected_facts", "outcomes"})
+        self.assertEqual(set(graph["nodes"][0]), {"id", "type", "title", "kind", "objective", "outputs", "expected_facts", "outcomes"})
 
 
 if __name__ == "__main__":

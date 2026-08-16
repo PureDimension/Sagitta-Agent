@@ -272,13 +272,16 @@ class PlanningServiceTests(unittest.TestCase):
             events = (root / "plans" / run_id / "events.jsonl").read_text(encoding="utf-8")
             self.assertIn("planning_exception_recorded", events)
 
-    def test_planner_prompt_makes_retry_direct_self_calls_only(self) -> None:
+    def test_planner_prompt_teaches_flat_graph_counter_windows(self) -> None:
         prompt = resources.files("sagitta.prompts").joinpath("planner.md").read_text(encoding="utf-8")
 
-        self.assertIn("counts only **direct self-retries**", prompt)
-        self.assertIn("never use `$verify_change.retry`", prompt)
-        self.assertIn('"when": "$workflow.verify_change < 2"', prompt)
-        self.assertNotIn('"when": "$verify_change.retry < 2"', prompt)
+        self.assertIn("There are no `scope` objects", prompt)
+        self.assertIn("`$phase.entercount.after.anchor`", prompt)
+        self.assertIn("`$phase.retrycount.after.anchor`", prompt)
+        self.assertIn('"when": "$inspect.retrycount < 2"', prompt)
+        self.assertIn('"when": "$verify_change.entercount.after.inspect < 3"', prompt)
+        self.assertNotIn('"type": "scope"', prompt)
+        self.assertNotIn("$workflow.verify_change", prompt)
         self.assertIn("Every phase contract must contain an `## Outcome conditions` section", prompt)
         self.assertIn("Outcome names are labels, never definitions", prompt)
         self.assertIn('"reason": "The answer changes compatibility requirements', prompt)

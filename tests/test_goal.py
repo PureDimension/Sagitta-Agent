@@ -35,48 +35,41 @@ def workflow() -> dict:
         "goal": "Make a bounded change.",
         "project_summary": "A Python project with tests.",
         "assumptions": ["Use the existing test command."],
-        "entry_phase": "major",
+        "entry_phase": "implement",
         "phases": [
             {
-                "type": "scope",
-                "id": "major",
-                "entry_phase": "implement",
-                "phases": [
-                    {
-                        "type": "phase",
-                        "id": "implement",
-                        "title": "Implement the change",
-                        "kind": "implement",
-                        "objective": "Make the requested change.",
-                        "outputs": ["The changed source files."],
-                        "expected_facts": ["The requested behavior is present."],
-                        "timeout_seconds": 120,
-                        "on": {
-                            "implemented": "test",
-                            "blocked": [
-                                {"when": "$implement.retry < 2", "target": "implement"},
-                                {"target": "$complete"},
-                            ],
-                        },
-                    },
-                    {
-                        "type": "phase",
-                        "id": "test",
-                        "title": "Run verification",
-                        "kind": "test",
-                        "objective": "Run the project tests.",
-                        "outputs": ["A test log."],
-                        "expected_facts": ["The test command exits successfully."],
-                        "timeout_seconds": 60,
-                        "on": {
-                            "passed": "$complete",
-                            "needs_fix": [
-                                {"when": "$major.implement <= 1 and $workflow.test < 3", "target": "implement"},
-                                {"target": "$complete"},
-                            ],
-                        },
-                    },
-                ],
+                "type": "phase",
+                "id": "implement",
+                "title": "Implement the change",
+                "kind": "implement",
+                "objective": "Make the requested change.",
+                "outputs": ["The changed source files."],
+                "expected_facts": ["The requested behavior is present."],
+                "timeout_seconds": 120,
+                "on": {
+                    "implemented": "test",
+                    "blocked": [
+                        {"when": "$implement.retrycount.after.test < 2", "target": "implement"},
+                        {"target": "$complete"},
+                    ],
+                },
+            },
+            {
+                "type": "phase",
+                "id": "test",
+                "title": "Run verification",
+                "kind": "test",
+                "objective": "Run the project tests.",
+                "outputs": ["A test log."],
+                "expected_facts": ["The test command exits successfully."],
+                "timeout_seconds": 60,
+                "on": {
+                    "passed": "$complete",
+                    "needs_fix": [
+                        {"when": "$test.entercount.after.implement <= 1 and $test.entercount < 3", "target": "implement"},
+                        {"target": "$complete"},
+                    ],
+                },
             }
         ],
     }
@@ -87,23 +80,22 @@ class GoalCompilerTests(unittest.TestCase):
         goal = compile_goal(
             workflow(),
             "Add the bounded change.",
-            [{"id": "scope", "question": "Which scope?", "answer": "Only the API."}],
+            [{"id": "boundary", "question": "Which boundary?", "answer": "Only the API."}],
             Path("/managed-plan"),
         )
 
         self.assertIn("Add the bounded change.", goal)
         self.assertIn("Answer: Only the API.", goal)
-        self.assertIn("Scope `major`", goal)
         self.assertIn("Phase `implement`", goal)
         self.assertIn("If you observe `blocked`", goal)
-        self.assertIn("phase `implement` has directly retried itself fewer than 2 times", goal)
+        self.assertIn("since phase `test` was most recently entered, phase `implement` has directly retried itself fewer than 2 times", goal)
         self.assertIn("otherwise, finish the workflow", goal)
-        self.assertIn("this run of scope `major` has entered its direct child `implement` at most 1 times", goal)
-        self.assertIn("the workflow has entered `test` fewer than 3 times", goal)
-        self.assertNotIn("$implement.retry", goal)
+        self.assertIn("since phase `implement` was most recently entered, phase `test` has been entered at most 1 times", goal)
+        self.assertIn("phase `test` has been entered fewer than 3 times", goal)
+        self.assertIn("Keep the following counters explicitly", goal)
+        self.assertNotIn("Scope `", goal)
+        self.assertNotIn("$implement.retrycount", goal)
         self.assertNotIn("$complete", goal)
-        self.assertNotIn("$major.implement", goal)
-        self.assertNotIn("$workflow.test", goal)
         self.assertNotIn("$", goal)
         self.assertNotIn('{"when"', goal)
         self.assertIn("/managed-plan/TASK_CONTRACT.md", goal)

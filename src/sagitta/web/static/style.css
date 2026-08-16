@@ -104,12 +104,14 @@ body {
 }
 .mode-switch {
   display: flex;
+  gap: 1px;
   padding: 3px;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: 11px;
   background: #081427;
 }
 .mode-switch button {
+  flex: 1 1 0;
   width: auto;
   margin: 0;
 }
@@ -557,10 +559,6 @@ button:disabled {
   color: var(--ink);
   font-weight: 600;
 }
-.node.scope {
-  border-style: dashed;
-  color: var(--violet);
-}
 .edge {
   color: var(--muted);
   font-size: 0.78rem;
@@ -709,10 +707,31 @@ button:disabled {
 .planner-question p {
   margin: 0 0 6px;
 }
+.planner-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .planner-question small {
   color: var(--muted);
   display: block;
   margin-bottom: 7px;
+}
+.planner-history {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+.planner-answer {
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: #102340;
+  color: var(--ink);
+  white-space: pre-wrap;
 }
 .planner-submit {
   display: flex;

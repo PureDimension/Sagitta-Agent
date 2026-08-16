@@ -12,7 +12,7 @@ from .ir import validate_workflow
 
 
 _COMPARISON = re.compile(
-    r"(?P<counter>\$[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*)"
+    r"(?P<counter>\$[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*){1,3})"
     r"\s*(?P<operator><=|>=|==|!=|<|>)\s*(?P<number>\d+)"
 )
 _COMPARISON_WORDS = {
@@ -83,6 +83,7 @@ def compile_goal(workflow: dict[str, Any], intent: str, qa: list[dict[str, Any]]
         .replace("{{ENTRY_PHASE}}", workflow["entry_phase"])
         .replace("{{TASK_CONTRACT_PATH}}", str(plan_directory / "TASK_CONTRACT.md"))
         .replace("{{PRELAUNCH_REVIEW_PATH}}", str(plan_directory / "PRELAUNCH_REVIEW.md"))
+        .replace("{{COUNTER_TRACKING}}", _format_counter_tracking(workflow))
         .replace("{{WORKFLOW_GRAPH}}", _format_nodes(workflow["phases"], plan_directory))
     )
 
@@ -107,28 +108,15 @@ def _format_qa(qa: list[dict[str, Any]]) -> str:
     return "\n".join(lines) if lines else "- No usable planning decisions were recorded."
 
 
-def _format_nodes(nodes: list[dict[str, Any]], plan_directory: Path, depth: int = 0) -> str:
+def _format_nodes(nodes: list[dict[str, Any]], plan_directory: Path) -> str:
     sections: list[str] = []
-    for node in nodes:
-        if node["type"] == "scope":
-            sections.append(_format_scope(node, plan_directory, depth))
-        else:
-            sections.append(_format_phase(node, plan_directory, depth))
+    for phase in nodes:
+        sections.append(_format_phase(phase, plan_directory))
     return "\n\n".join(sections)
 
 
-def _format_scope(scope: dict[str, Any], plan_directory: Path, depth: int) -> str:
-    heading = "#" * min(6, 3 + depth)
-    body = [
-        f"{heading} Scope `{scope['id']}`",
-        f"Entering this scope starts at `{scope['entry_phase']}` and opens a fresh local counter window.",
-        _format_nodes(scope["phases"], plan_directory, depth + 1),
-    ]
-    return "\n\n".join(body)
-
-
-def _format_phase(phase: dict[str, Any], plan_directory: Path, depth: int) -> str:
-    heading = "#" * min(6, 3 + depth)
+def _format_phase(phase: dict[str, Any], plan_directory: Path) -> str:
+    heading = "###"
     contract_path = plan_directory / "phases" / f"{phase['id']}.md"
     body = [
         f"{heading} Phase `{phase['id']}` — {phase['title']}",
@@ -143,12 +131,12 @@ def _format_phase(phase: dict[str, Any], plan_directory: Path, depth: int) -> st
         "Objective:\n" + phase["objective"],
         "Required outputs:\n" + _bullets(phase["outputs"], empty="- None."),
         "Expected postconditions:\n" + _bullets(phase["expected_facts"], empty="- None."),
-        "Outcome routing:\n" + _format_outcomes(phase["on"], phase["id"]),
+        "Outcome routing:\n" + _format_outcomes(phase["on"]),
     ]
     return "\n\n".join(body)
 
 
-def _format_outcomes(outcomes: dict[str, Any], current_phase_id: str) -> str:
+def _format_outcomes(outcomes: dict[str, Any]) -> str:
     lines: list[str] = []
     for outcome, route in outcomes.items():
         if isinstance(route, str):
@@ -158,7 +146,7 @@ def _format_outcomes(outcomes: dict[str, Any], current_phase_id: str) -> str:
         for index, item in enumerate(route):
             if "when" in item:
                 prefix = "if" if index == 0 else "otherwise, if"
-                routes.append(f"{prefix} {_format_condition(item['when'], current_phase_id)}, {_format_target(item['target'])}")
+                routes.append(f"{prefix} {_format_condition(item['when'])}, {_format_target(item['target'])}")
             else:
                 routes.append(f"otherwise, {_format_target(item['target'])}")
         lines.append(f"- If you observe `{outcome}`: " + "; ".join(routes) + ".")
@@ -168,31 +156,60 @@ def _format_outcomes(outcomes: dict[str, Any], current_phase_id: str) -> str:
 def _format_target(target: str) -> str:
     if target == "$complete":
         return "finish the workflow"
-    return f"continue with phase or scope `{target}`"
+    return f"continue with phase `{target}`"
 
 
-def _format_condition(condition: str, current_phase_id: str) -> str:
+def _format_condition(condition: str) -> str:
     """Compile the intentionally small IR condition language into executor prose."""
 
     def replace(match: re.Match[str]) -> str:
         counter = match["counter"]
-        scope_or_phase, child_or_metric = counter[1:].split(".", maxsplit=1)
         amount = match["number"]
         comparison = _COMPARISON_WORDS[match["operator"]]
-        if scope_or_phase == "workflow":
-            subject = f"the workflow has entered `{child_or_metric}`"
-        elif child_or_metric == "retry":
-            subject = f"phase `{current_phase_id}` has directly retried itself"
-        else:
-            subject = (
-                f"this run of scope `{scope_or_phase}` has entered its direct child "
-                f"`{child_or_metric}`"
-            )
+        subject = _counter_subject(counter)
         if match["operator"] == "!=":
             return f"{subject} {comparison} {amount}"
         return f"{subject} {comparison} {amount} times"
 
     return _COMPARISON.sub(replace, condition)
+
+
+def _counter_subject(counter: str) -> str:
+    """Render one validated counter reference without exposing IR syntax."""
+    parts = counter[1:].split(".")
+    phase_id, metric = parts[:2]
+    if metric == "entercount":
+        subject = f"phase `{phase_id}` has been entered"
+    else:
+        subject = f"phase `{phase_id}` has directly retried itself"
+    if len(parts) == 4:
+        anchor_phase = parts[3]
+        subject = f"since phase `{anchor_phase}` was most recently entered, {subject}"
+    return subject
+
+
+def _format_counter_tracking(workflow: dict[str, Any]) -> str:
+    references = _counter_references(workflow)
+    if not references:
+        return "- No conditional counters are used by this workflow."
+    return "\n".join(f"- {_counter_subject(reference)}." for reference in references)
+
+
+def _counter_references(workflow: dict[str, Any]) -> list[str]:
+    references: list[str] = []
+    seen: set[str] = set()
+    for phase in workflow["phases"]:
+        for route in phase["on"].values():
+            routes = route if isinstance(route, list) else []
+            for item in routes:
+                if not isinstance(item, dict) or "when" not in item:
+                    continue
+                for match in _COMPARISON.finditer(item["when"]):
+                    counter = match["counter"]
+                    if counter not in seen:
+                        seen.add(counter)
+                        references.append(counter)
+    return references
 
 
 def _validate_contract_files(workflow: dict[str, Any], plan_directory: Path) -> None:
@@ -204,10 +221,4 @@ def _validate_contract_files(workflow: dict[str, Any], plan_directory: Path) -> 
 
 
 def _phase_ids(nodes: list[dict[str, Any]]) -> list[str]:
-    phase_ids: list[str] = []
-    for node in nodes:
-        if node["type"] == "phase":
-            phase_ids.append(node["id"])
-        else:
-            phase_ids.extend(_phase_ids(node["phases"]))
-    return phase_ids
+    return [phase["id"] for phase in nodes]

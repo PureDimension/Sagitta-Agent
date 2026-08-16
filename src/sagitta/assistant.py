@@ -110,8 +110,30 @@ class AssistantService:
         plan = self.store.task_plan(project_id, task_id)
         if plan is None:
             raise ProjectError("plan_not_found", "Task has no Plan package.")
+        response = plan.get("response")
+        questions = response.get("questions") if isinstance(response, dict) else None
+        question_map = {
+            item.get("id"): item
+            for item in questions
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        } if isinstance(questions, list) else {}
+        transcript_answers = [
+            {
+                "id": item["id"],
+                "question": str(question_map.get(item["id"], {}).get("question", "")),
+                "reason": str(question_map.get(item["id"], {}).get("reason", "")),
+                "answer": item["answer"],
+            }
+            for item in answers
+        ]
         answer_text = "\n".join(f"{item['id']}: {item['answer']}" for item in answers)
-        self.store.append_task_message(project_id, task_id, "user", answer_text, metadata={"route": "direct", "kind": "planner_answers"})
+        self.store.append_task_message(
+            project_id,
+            task_id,
+            "user",
+            answer_text,
+            metadata={"route": "direct", "kind": "planner_answers", "answers": transcript_answers},
+        )
         result = self.submit_planner_answers(project_id, str(plan["id"]), answers)
         self._append_planner_update(project_id, task_id, result)
         return result
@@ -141,14 +163,23 @@ class AssistantService:
             return
         summary = response.get("summary")
         questions = response.get("questions")
-        parts = [summary] if isinstance(summary, str) and summary.strip() else []
-        if isinstance(questions, list) and questions:
-            parts.append("Questions to settle before offline work:\n" + "\n".join(
-                f"{index + 1}. {item.get('question', '')}\n   Why: {item.get('reason', '')}"
-                for index, item in enumerate(questions) if isinstance(item, dict)
-            ))
-        if parts:
-            self.store.append_task_message(project_id, task_id, "assistant", "\n\n".join(parts), metadata={"route": "direct", "kind": "planner_update"})
+        round_questions = [
+            {"id": item["id"], "question": item["question"], "reason": item.get("reason", "")}
+            for item in questions
+            if isinstance(item, dict) and isinstance(item.get("id"), str) and isinstance(item.get("question"), str)
+        ] if isinstance(questions, list) else []
+        if (isinstance(summary, str) and summary.strip()) or round_questions:
+            self.store.append_task_message(
+                project_id,
+                task_id,
+                "assistant",
+                summary.strip() if isinstance(summary, str) and summary.strip() else "Planner needs a decision round.",
+                metadata={
+                    "route": "direct",
+                    "kind": "planner_round" if round_questions else "planner_update",
+                    "questions": round_questions,
+                },
+            )
 
 
 SYSTEM_INSTRUCTIONS = """You are Sagitta, a high-agency development collaborator. Understand a task before starting Codex planning, point out material blind spots, and preserve the user's control over decisions. You may inspect a registered project's status, start Codex planning only after understanding the intent, submit a complete planner-answer round when the user's conversation already settles each question, and export a ready Goal. You may make an informed recommendation, but never fabricate a user decision: return unresolved planner questions to the user with context. You have no shell, source-edit, arbitrary filesystem, API-key, or environment access."""
